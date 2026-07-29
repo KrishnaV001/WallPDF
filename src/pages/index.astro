@@ -1,0 +1,12 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { ToolGrid } from '../components/ToolGrid';
+import toolsData from '../data/tools.json';
+---
+
+<BaseLayout 
+  title="WallPDF — Every tool you need to work with PDFs" 
+  description="Every tool you need to use PDFs, at your fingertips. 100% FREE and client-side processing."
+>
+  <ToolGrid client:load tools={toolsData} />
+</BaseLayout>

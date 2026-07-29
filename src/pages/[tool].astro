@@ -1,0 +1,33 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { ToolWorkspace } from '../components/ToolWorkspace';
+
+// Import JSON default export
+import tools from '../data/tools.json';
+
+export async function getStaticPaths() {
+  const toolList = Array.isArray(tools) ? tools : [];
+
+  return toolList.map((item) => ({
+    // KEY POINT: The parameter key must be 'tool' to match [tool].astro
+    params: { tool: item.slug },
+    props: { toolData: item },
+  }));
+}
+
+const { toolData } = Astro.props;
+---
+
+<BaseLayout 
+  title={`${toolData?.title || 'Tool'} — WallPDF`} 
+  description={toolData?.description || ''}
+>
+  <div class="bg-[#F8F6F5] min-h-[calc(100vh-4rem)]">
+    <ToolWorkspace
+      client:load
+      toolSlug={toolData.slug}
+      toolName={toolData.h1 || toolData.title}
+      description={toolData.description}
+    />
+  </div>
+</BaseLayout>

@@ -1,0 +1,50 @@
+---
+import '../styles/global.css';
+import { Header } from '../components/Header';
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    
+    <!-- Inline Theme Initializer -->
+    <script is:inline>
+      (function() {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else if (savedTheme === 'light') {
+          document.documentElement.classList.remove('dark');
+        } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body class="bg-[#F8FAFC] dark:bg-black text-slate-900 dark:text-white min-h-screen flex flex-col antialiased transition-colors duration-200">
+    
+    <!-- Render Header with client:only to guarantee React interactivity -->
+    <Header client:only="react" />
+
+    <main class="flex-grow bg-[#F8FAFC] dark:bg-black">
+      <slot />
+    </main>
+
+    <footer class="border-t border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-black py-6 text-center text-xs text-slate-500 dark:text-zinc-500">
+      <p>WallPDF — Private client-side PDF utilities. Processed entirely in browser memory.</p>
+    </footer>
+  </body>
+</html>

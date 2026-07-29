@@ -1,0 +1,82 @@
+[
+  {
+    "slug": "merge-pdf",
+    "title": "Merge PDF Files Online - WallPDF",
+    "h1": "Merge PDF",
+    "description": "Combine PDFs in the order you want with the easiest PDF merger available.",
+    "category": "Organize PDF",
+    "color": "red"
+  },
+  {
+    "slug": "split-pdf",
+    "title": "Split PDF Pages Instantly - WallPDF",
+    "h1": "Split PDF",
+    "description": "Separate one page or a whole set for easy conversion into independent PDF files.",
+    "category": "Organize PDF",
+    "color": "red"
+  },
+  {
+    "slug": "compress-pdf",
+    "title": "Compress PDF Size - WallPDF",
+    "h1": "Compress PDF",
+    "description": "Reduce file size while optimizing for maximal PDF quality.",
+    "category": "Optimize PDF",
+    "color": "green"
+  },
+  {
+    "slug": "pdf-to-word",
+    "title": "Convert PDF to Word - WallPDF",
+    "h1": "PDF to Word",
+    "description": "Easily convert your PDF files into easy to edit DOC and DOCX documents.",
+    "category": "Convert PDF",
+    "color": "blue"
+  },
+  {
+    "slug": "pdf-to-powerpoint",
+    "title": "Convert PDF to PowerPoint - WallPDF",
+    "h1": "PDF to PowerPoint",
+    "description": "Turn your PDF files into easy to edit PPT and PPTX slideshows.",
+    "category": "Convert PDF",
+    "color": "orange"
+  },
+  {
+    "slug": "pdf-to-excel",
+    "title": "Convert PDF to Excel - WallPDF",
+    "h1": "PDF to Excel",
+    "description": "Pull data straight from PDFs into Excel spreadsheets in a few short clicks.",
+    "category": "Convert PDF",
+    "color": "emerald"
+  },
+  {
+    "slug": "word-to-pdf",
+    "title": "Convert Word to PDF - WallPDF",
+    "h1": "Word to PDF",
+    "description": "Make DOC and DOCX files easy to read by converting them to PDF.",
+    "category": "Convert PDF",
+    "color": "blue"
+  },
+  {
+    "slug": "powerpoint-to-pdf",
+    "title": "Convert PowerPoint to PDF - WallPDF",
+    "h1": "PowerPoint to PDF",
+    "description": "Make PPT and PPTX slideshows easy to view by converting them to PDF.",
+    "category": "Convert PDF",
+    "color": "orange"
+  },
+  {
+    "slug": "excel-to-pdf",
+    "title": "Convert Excel to PDF - WallPDF",
+    "h1": "Excel to PDF",
+    "description": "Make EXCEL spreadsheets easy to read by converting them to PDF.",
+    "category": "Convert PDF",
+    "color": "emerald"
+  },
+  {
+    "slug": "edit-pdf",
+    "title": "Edit PDF Files Online - WallPDF",
+    "h1": "Edit PDF",
+    "description": "Add text, images, shapes or freehand annotations to a PDF document.",
+    "category": "Edit PDF",
+    "color": "purple"
+  }
+]
