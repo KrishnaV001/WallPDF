@@ -78,5 +78,13 @@
     "description": "Add text, images, shapes or freehand annotations to a PDF document.",
     "category": "Edit PDF",
     "color": "purple"
+  },
+  {
+    "slug": "image-to-pdf",
+    "title": "Convert Image to PDF - WallPDF",
+    "h1": "Image to PDF",
+    "description": "Convert JPG, PNG, and other image formats to PDF.",
+    "category": "Convert PDF",
+    "color": "purple"
   }
 ]

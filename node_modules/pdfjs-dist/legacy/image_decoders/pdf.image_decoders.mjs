@@ -21,8 +21,8 @@
  */
 
 /**
- * pdfjsVersion = 6.1.200
- * pdfjsBuild = 6353acefe
+ * pdfjsVersion = 6.2.108
+ * pdfjsBuild = 0365cbde0
  */
 /******/ var __webpack_modules__ = ({
 
@@ -4466,17 +4466,17 @@ $({ target: 'URL', stat: true, forced: !USE_NATIVE_URL }, {
 /******/ });
 /************************************************************************/
 /******/ // The module cache
-/******/ var __webpack_module_cache__ = {};
+/******/ const __webpack_module_cache__ = {};
 /******/ 
 /******/ // The require function
 /******/ function __webpack_require__(moduleId) {
 /******/ 	// Check if module is in cache
-/******/ 	var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 	const cachedModule = __webpack_module_cache__[moduleId];
 /******/ 	if (cachedModule !== undefined) {
 /******/ 		return cachedModule.exports;
 /******/ 	}
 /******/ 	// Create a new module (and put it into the cache)
-/******/ 	var module = __webpack_module_cache__[moduleId] = {
+/******/ 	const module = __webpack_module_cache__[moduleId] = {
 /******/ 		// no module.id needed
 /******/ 		// no module.loaded needed
 /******/ 		exports: {}
@@ -4492,11 +4492,26 @@ $({ target: 'URL', stat: true, forced: !USE_NATIVE_URL }, {
 /************************************************************************/
 /******/ /* webpack/runtime/define property getters */
 /******/ (() => {
-/******/ 	// define getter functions for harmony exports
+/******/ 	// define getter/value functions for harmony exports
 /******/ 	__webpack_require__.d = (exports, definition) => {
-/******/ 		for(var key in definition) {
-/******/ 			if(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {
-/******/ 				Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 		if(Array.isArray(definition)) {
+/******/ 			var i = 0;
+/******/ 			while(i < definition.length) {
+/******/ 				var key = definition[i++];
+/******/ 				var binding = definition[i++];
+/******/ 				if(!__webpack_require__.o(exports, key)) {
+/******/ 					if(binding === 0) {
+/******/ 						Object.defineProperty(exports, key, { enumerable: true, value: definition[i++] });
+/******/ 					} else {
+/******/ 						Object.defineProperty(exports, key, { enumerable: true, get: binding });
+/******/ 					}
+/******/ 				} else if(binding === 0) { i++; }
+/******/ 			}
+/******/ 		} else {
+/******/ 			for(var key in definition) {
+/******/ 				if(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {
+/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 				}
 /******/ 			}
 /******/ 		}
 /******/ 	};
@@ -4521,6 +4536,20 @@ var es_iterator_filter = __webpack_require__(2489);
 var es_map_get_or_insert = __webpack_require__(5367);
 // EXTERNAL MODULE: ./node_modules/core-js/modules/es.map.get-or-insert-computed.js
 var es_map_get_or_insert_computed = __webpack_require__(2731);
+// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.difference.v2.js
+var es_set_difference_v2 = __webpack_require__(7642);
+// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.intersection.v2.js
+var es_set_intersection_v2 = __webpack_require__(8004);
+// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.is-disjoint-from.v2.js
+var es_set_is_disjoint_from_v2 = __webpack_require__(3853);
+// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.is-subset-of.v2.js
+var es_set_is_subset_of_v2 = __webpack_require__(5876);
+// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.is-superset-of.v2.js
+var es_set_is_superset_of_v2 = __webpack_require__(2475);
+// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.symmetric-difference.v2.js
+var es_set_symmetric_difference_v2 = __webpack_require__(5024);
+// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.union.v2.js
+var es_set_union_v2 = __webpack_require__(1698);
 // EXTERNAL MODULE: ./node_modules/core-js/modules/es.typed-array.with.js
 var es_typed_array_with = __webpack_require__(9577);
 // EXTERNAL MODULE: ./node_modules/core-js/modules/es.uint8-array.set-from-base64.js
@@ -4546,13 +4575,20 @@ var web_url_parse = __webpack_require__(5781);
 
 
 
+
+
+
+
+
+
+
 const isNodeJS = typeof process === "object" && process + "" === "[object process]" && !process.versions.nw && !(process.versions.electron && process.type && process.type !== "browser");
 const BBOX_INIT = [Infinity, Infinity, -Infinity, -Infinity];
 const F32_BBOX_INIT = new Float32Array(BBOX_INIT);
 const FONT_IDENTITY_MATRIX = (/* unused pure expression or super */ null && ([0.001, 0, 0, 0.001, 0, 0]));
 const LINE_FACTOR = 1.35;
 const LINE_DESCENT_FACTOR = 0.35;
-const BASELINE_FACTOR = LINE_DESCENT_FACTOR / LINE_FACTOR;
+const BASELINE_FACTOR = (/* unused pure expression or super */ null && (LINE_DESCENT_FACTOR / LINE_FACTOR));
 const SVG_NS = "http://www.w3.org/2000/svg";
 const RenderingIntentFlag = (/* unused pure expression or super */ null && ({
   ANY: 0x01,
@@ -5001,9 +5037,6 @@ function stringToBytes(str) {
   }
   return bytes;
 }
-function objectSize(obj) {
-  return Object.keys(obj).length;
-}
 class FeatureTest {
   static get isLittleEndian() {
     const buffer8 = new Uint8Array(4);
@@ -5314,6 +5347,7 @@ function _isValidExplicitDest(validRef, validName, dest) {
 const makeArr = () => [];
 const makeMap = () => new Map();
 const makeObj = () => Object.create(null);
+const makeSet = () => new Set();
 if (typeof Blob.prototype.bytes !== "function") {
   Blob.prototype.bytes = async function () {
     return new Uint8Array(await this.arrayBuffer());
@@ -5322,6 +5356,11 @@ if (typeof Blob.prototype.bytes !== "function") {
 if (typeof Response.prototype.bytes !== "function") {
   Response.prototype.bytes = async function () {
     return new Uint8Array(await this.arrayBuffer());
+  };
+}
+if (typeof Iterator.prototype.join !== "function") {
+  Iterator.prototype.join = function (separator) {
+    return [...this].join(separator);
   };
 }
 
@@ -5634,20 +5673,6 @@ async function JBig2(moduleArg = {}) {
 /* harmony default export */ const jbig2 = (JBig2);
 // EXTERNAL MODULE: ./node_modules/core-js/modules/es.promise.with-resolvers.js
 var es_promise_with_resolvers = __webpack_require__(4628);
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.difference.v2.js
-var es_set_difference_v2 = __webpack_require__(7642);
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.intersection.v2.js
-var es_set_intersection_v2 = __webpack_require__(8004);
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.is-disjoint-from.v2.js
-var es_set_is_disjoint_from_v2 = __webpack_require__(3853);
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.is-subset-of.v2.js
-var es_set_is_subset_of_v2 = __webpack_require__(5876);
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.is-superset-of.v2.js
-var es_set_is_superset_of_v2 = __webpack_require__(2475);
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.symmetric-difference.v2.js
-var es_set_symmetric_difference_v2 = __webpack_require__(5024);
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.set.union.v2.js
-var es_set_union_v2 = __webpack_require__(1698);
 // EXTERNAL MODULE: ./node_modules/core-js/modules/es.iterator.every.js
 var es_iterator_every = __webpack_require__(1148);
 // EXTERNAL MODULE: ./node_modules/core-js/modules/es.iterator.map.js
@@ -5850,15 +5875,14 @@ class Dict {
   }
 }
 class Ref {
-  constructor(num, gen) {
+  #str;
+  constructor(str, num, gen) {
+    this.#str = str;
     this.num = num;
     this.gen = gen;
   }
   toString() {
-    if (this.gen === 0) {
-      return `${this.num}R`;
-    }
-    return `${this.num}R${this.gen}`;
+    return this.#str;
   }
   static fromString(str) {
     const ref = RefCache[str];
@@ -5869,11 +5893,13 @@ class Ref {
     if (!m || m[1] === "0") {
       return null;
     }
-    return RefCache[str] = new Ref(parseInt(m[1], 10), !m[2] ? 0 : parseInt(m[2], 10));
+    const num = parseInt(m[1], 10),
+      gen = !m[2] ? 0 : parseInt(m[2], 10);
+    return RefCache[str] = new Ref(str, num, gen);
   }
   static get(num, gen) {
-    const key = gen === 0 ? `${num}R` : `${num}R${gen}`;
-    return RefCache[key] ||= new Ref(num, gen);
+    const str = gen === 0 ? `${num}R` : `${num}R${gen}`;
+    return RefCache[str] ||= new Ref(str, num, gen);
   }
 }
 class RefSet {
@@ -5912,6 +5938,14 @@ class RefSetCache {
   }
   putAlias(ref, aliasRef) {
     this._map.set(ref.toString(), this.get(aliasRef));
+  }
+  getOrPutComputed(ref, callback) {
+    const map = this._map,
+      refStr = ref.toString();
+    if (!map.has(refStr)) {
+      map.set(refStr, callback(ref));
+    }
+    return map.get(refStr);
   }
   [Symbol.iterator]() {
     return this._map.values();
@@ -6125,7 +6159,6 @@ function stringToPDFString(str, keepEscapeSequence = false) {
 ;// ./src/core/core_utils.js
 /* unused harmony import specifier */ var core_utils_assert;
 /* unused harmony import specifier */ var core_utils_Util;
-/* unused harmony import specifier */ var core_utils_objectSize;
 /* unused harmony import specifier */ var core_utils_warn;
 /* unused harmony import specifier */ var core_utils_AnnotationEditorPrefix;
 /* unused harmony import specifier */ var core_utils_makeArr;
@@ -6359,7 +6392,7 @@ function escapePDFName(str) {
       if (start < i) {
         buffer.push(str.substring(start, i));
       }
-      buffer.push(`#${char.toString(16)}`);
+      buffer.push(`#${char.toString(16).padStart(2, "0")}`);
       start = i + 1;
     }
   }
@@ -6454,7 +6487,7 @@ function collectActions(xref, dict, eventType) {
       actions.Action = list;
     }
   }
-  return core_utils_objectSize(actions) > 0 ? actions : null;
+  return Object.keys(actions).length ? actions : null;
 }
 const XMLEntities = (/* unused pure expression or super */ null && ({
   0x3c: "&lt;",
@@ -6491,7 +6524,7 @@ function encodeToXmlString(str) {
         buffer.push(str.substring(start, i));
       }
       buffer.push(`&#x${char.toString(16).toUpperCase()};`);
-      if (char > 0xd7ff && (char < 0xe000 || char > 0xfffd)) {
+      if (char > 0xffff) {
         i++;
       }
       start = i + 1;
@@ -6889,6 +6922,15 @@ class ColorSpace {
   getRgbBuffer(src, srcOffset, count, dest, destOffset, bits, alpha01) {
     unreachable("Should not call ColorSpace.getRgbBuffer");
   }
+  getRgbItems(src, count, dest, destOffset, alpha01) {
+    const {
+      numComps
+    } = this;
+    for (let i = 0, srcOffset = 0; i < count; i++, srcOffset += numComps) {
+      this.getRgbItem(src, srcOffset, dest, destOffset);
+      destOffset += 3 + alpha01;
+    }
+  }
   getOutputLength(inputLength, alpha01) {
     unreachable("Should not call ColorSpace.getOutputLength");
   }
@@ -6979,6 +7021,21 @@ class AlternateCS extends ColorSpace {
     this.tintFn(src, srcOffset, tmpBuf, 0);
     this.base.getRgbItem(tmpBuf, 0, dest, destOffset);
   }
+  getRgbItems(src, count, dest, destOffset, alpha01) {
+    const {
+      base,
+      numComps,
+      tintFn
+    } = this;
+    const baseNumComps = base.numComps;
+    const tinted = new Float32Array(count * baseNumComps);
+    for (let i = 0, srcOffset = 0, tintedOffset = 0; i < count; i++) {
+      tintFn(src, srcOffset, tinted, tintedOffset);
+      srcOffset += numComps;
+      tintedOffset += baseNumComps;
+    }
+    base.getRgbItems(tinted, count, dest, destOffset, alpha01);
+  }
   getRgbBuffer(src, srcOffset, count, dest, destOffset, bits, alpha01) {
     const tintFn = this.tintFn;
     const base = this.base;
@@ -7024,50 +7081,47 @@ class PatternCS extends ColorSpace {
   }
 }
 class IndexedCS extends ColorSpace {
+  #rgbLookup;
   constructor(base, highVal, lookup) {
     super("Indexed", 1);
-    this.base = base;
     this.highVal = highVal;
-    const length = base.numComps * (highVal + 1);
-    this.lookup = new Uint8Array(length);
+    const count = highVal + 1;
+    const length = base.numComps * count;
+    const palette = new Uint8Array(length);
     if (lookup instanceof BaseStream) {
-      const bytes = lookup.getBytes(length);
-      this.lookup.set(bytes);
+      palette.set(lookup.getBytes(length));
     } else if (typeof lookup === "string") {
       for (let i = 0; i < length; ++i) {
-        this.lookup[i] = lookup.charCodeAt(i) & 0xff;
+        palette[i] = lookup.charCodeAt(i);
       }
     } else {
       throw new FormatError(`IndexedCS - unrecognized lookup table: ${lookup}`);
     }
+    this.#rgbLookup = new Uint8ClampedArray(count * 3);
+    base.getRgbBuffer(palette, 0, count, this.#rgbLookup, 0, 8, 0);
   }
   getRgbItem(src, srcOffset, dest, destOffset) {
-    const {
-      base,
-      highVal,
-      lookup
-    } = this;
-    const start = MathClamp(Math.round(src[srcOffset]), 0, highVal) * base.numComps;
-    base.getRgbBuffer(lookup, start, 1, dest, destOffset, 8, 0);
+    const rgbLookup = this.#rgbLookup;
+    const pos = MathClamp(Math.round(src[srcOffset]), 0, this.highVal) * 3;
+    dest[destOffset] = rgbLookup[pos];
+    dest[destOffset + 1] = rgbLookup[pos + 1];
+    dest[destOffset + 2] = rgbLookup[pos + 2];
   }
   getRgbBuffer(src, srcOffset, count, dest, destOffset, bits, alpha01) {
     const {
-      base,
-      highVal,
-      lookup
+      highVal
     } = this;
-    const {
-      numComps
-    } = base;
-    const outputDelta = base.getOutputLength(numComps, alpha01);
+    const rgbLookup = this.#rgbLookup;
     for (let i = 0; i < count; ++i) {
-      const lookupPos = MathClamp(Math.round(src[srcOffset++]), 0, highVal) * numComps;
-      base.getRgbBuffer(lookup, lookupPos, 1, dest, destOffset, 8, alpha01);
-      destOffset += outputDelta;
+      const pos = MathClamp(Math.round(src[srcOffset++]), 0, highVal) * 3;
+      dest[destOffset++] = rgbLookup[pos];
+      dest[destOffset++] = rgbLookup[pos + 1];
+      dest[destOffset++] = rgbLookup[pos + 2];
+      destOffset += alpha01;
     }
   }
   getOutputLength(inputLength, alpha01) {
-    return this.base.getOutputLength(inputLength * this.base.numComps, alpha01);
+    return inputLength * (3 + alpha01);
   }
   isDefaultDecode(decode, bpc) {
     if (isDefaultDecodeHelper(decode, 2)) {
@@ -7477,15 +7531,14 @@ class LabCS extends ColorSpace {
 
 
 
+const ALPHA_MASK = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1 ? 0xff000000 : 0x000000ff;
+const RGB_MASK = ~ALPHA_MASK;
 class QCMS {
   static #memoryArray = null;
   static _memory = null;
-  static _mustAddAlpha = false;
   static _destBuffer = null;
   static _destOffset = 0;
-  static _destLength = 0;
-  static _cssColor = "";
-  static _makeHexColor = null;
+  static _keepAlpha = false;
   static get _memoryArray() {
     const array = this.#memoryArray;
     if (array?.byteLength) {
@@ -7496,46 +7549,30 @@ class QCMS {
 }
 function copy_result(ptr, len) {
   const {
-    _mustAddAlpha,
     _destBuffer,
     _destOffset,
-    _destLength,
+    _keepAlpha,
     _memoryArray
   } = QCMS;
-  if (len === _destLength) {
+  if (!_keepAlpha) {
     _destBuffer.set(_memoryArray.subarray(ptr, ptr + len), _destOffset);
     return;
   }
-  if (_mustAddAlpha) {
-    for (let i = ptr, ii = ptr + len, j = _destOffset; i < ii; i += 3, j += 4) {
-      _destBuffer[j] = _memoryArray[i];
-      _destBuffer[j + 1] = _memoryArray[i + 1];
-      _destBuffer[j + 2] = _memoryArray[i + 2];
-      _destBuffer[j + 3] = 255;
+  const count = len >> 2;
+  const destStart = _destBuffer.byteOffset + _destOffset;
+  if (((destStart | ptr) & 3) === 0) {
+    const dest32 = new Uint32Array(_destBuffer.buffer, destStart, count);
+    const src32 = new Uint32Array(QCMS._memory.buffer, ptr, count);
+    for (let i = 0; i < count; i++) {
+      dest32[i] = dest32[i] & ALPHA_MASK | src32[i] & RGB_MASK;
     }
-  } else {
-    for (let i = ptr, ii = ptr + len, j = _destOffset; i < ii; i += 3, j += 4) {
-      _destBuffer[j] = _memoryArray[i];
-      _destBuffer[j + 1] = _memoryArray[i + 1];
-      _destBuffer[j + 2] = _memoryArray[i + 2];
-    }
+    return;
   }
-}
-function copy_rgb(ptr) {
-  const {
-    _destBuffer,
-    _destOffset,
-    _memoryArray
-  } = QCMS;
-  _destBuffer[_destOffset] = _memoryArray[ptr];
-  _destBuffer[_destOffset + 1] = _memoryArray[ptr + 1];
-  _destBuffer[_destOffset + 2] = _memoryArray[ptr + 2];
-}
-function make_cssRGB(ptr) {
-  const {
-    _memoryArray
-  } = QCMS;
-  QCMS._cssColor = QCMS._makeHexColor(_memoryArray[ptr], _memoryArray[ptr + 1], _memoryArray[ptr + 2]);
+  for (let i = ptr, ii = ptr + len, j = _destOffset; i < ii; i += 4, j += 4) {
+    _destBuffer[j] = _memoryArray[i];
+    _destBuffer[j + 1] = _memoryArray[i + 1];
+    _destBuffer[j + 2] = _memoryArray[i + 2];
+  }
 }
 
 ;// ./external/qcms/qcms.js
@@ -7569,19 +7606,22 @@ const Intent = Object.freeze({
   AbsoluteColorimetric: 3,
   "3": "AbsoluteColorimetric"
 });
-function qcms_convert_array(transformer, src) {
+function qcms_convert_array(transformer, src, add_alpha) {
   const ptr0 = passArray8ToWasm0(src, wasm.__wbindgen_malloc);
   const len0 = WASM_VECTOR_LEN;
-  wasm.qcms_convert_array(transformer, ptr0, len0);
+  wasm.qcms_convert_array(transformer, ptr0, len0, add_alpha);
 }
-function qcms_convert_four(transformer, src1, src2, src3, src4, css) {
-  wasm.qcms_convert_four(transformer, src1, src2, src3, src4, css);
+function qcms_convert_four(transformer, src1, src2, src3, src4) {
+  const ret = wasm.qcms_convert_four(transformer, src1, src2, src3, src4);
+  return ret >>> 0;
 }
-function qcms_convert_one(transformer, src, css) {
-  wasm.qcms_convert_one(transformer, src, css);
+function qcms_convert_one(transformer, src) {
+  const ret = wasm.qcms_convert_one(transformer, src);
+  return ret >>> 0;
 }
-function qcms_convert_three(transformer, src1, src2, src3, css) {
-  wasm.qcms_convert_three(transformer, src1, src2, src3, css);
+function qcms_convert_three(transformer, src1, src2, src3) {
+  const ret = wasm.qcms_convert_three(transformer, src1, src2, src3);
+  return ret >>> 0;
 }
 function qcms_drop_transformer(transformer) {
   wasm.qcms_drop_transformer(transformer);
@@ -7595,17 +7635,11 @@ function qcms_transformer_from_memory(mem, in_type, intent) {
 function __wbg_get_imports() {
   const import0 = {
     __proto__: null,
-    __wbg___wbindgen_throw_6b64449b9b9ed33c: function (arg0, arg1) {
+    __wbg___wbindgen_throw_344f42d3211c4765: function (arg0, arg1) {
       throw new Error(getStringFromWasm0(arg0, arg1));
     },
     __wbg_copy_result_0d15f3bf9d9012ae: function (arg0, arg1) {
       copy_result(arg0 >>> 0, arg1 >>> 0);
-    },
-    __wbg_copy_rgb_0106d9d9464fce43: function (arg0) {
-      copy_rgb(arg0 >>> 0);
-    },
-    __wbg_make_cssRGB_8e24b34f71f5363e: function (arg0) {
-      make_cssRGB(arg0 >>> 0);
     },
     __wbindgen_init_externref_table: function () {
       const table = wasm.__wbindgen_externrefs;
@@ -7623,8 +7657,7 @@ function __wbg_get_imports() {
   };
 }
 function getStringFromWasm0(ptr, len) {
-  ptr = ptr >>> 0;
-  return decodeText(ptr, len);
+  return decodeText(ptr >>> 0, len);
 }
 let cachedUint8ArrayMemory0 = null;
 function getUint8ArrayMemory0() {
@@ -7659,8 +7692,9 @@ function decodeText(ptr, len) {
   return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 let WASM_VECTOR_LEN = 0;
-let wasmModule, wasm;
+let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {
+  wasmInstance = instance;
   wasm = instance.exports;
   wasmModule = module;
   cachedUint8ArrayMemory0 = null;
@@ -7776,15 +7810,15 @@ class IccColorSpace extends ColorSpace {
     switch (numComps) {
       case 1:
         inType = DataType.Gray8;
-        this.#convertPixel = (src, srcOffset, css) => qcms_convert_one(this.#transformer, src[srcOffset] * 255, css);
+        this.#convertPixel = (src, srcOffset) => qcms_convert_one(this.#transformer, src[srcOffset] * 255);
         break;
       case 3:
         inType = DataType.RGB8;
-        this.#convertPixel = (src, srcOffset, css) => qcms_convert_three(this.#transformer, src[srcOffset] * 255, src[srcOffset + 1] * 255, src[srcOffset + 2] * 255, css);
+        this.#convertPixel = (src, srcOffset) => qcms_convert_three(this.#transformer, src[srcOffset] * 255, src[srcOffset + 1] * 255, src[srcOffset + 2] * 255);
         break;
       case 4:
         inType = DataType.CMYK;
-        this.#convertPixel = (src, srcOffset, css) => qcms_convert_four(this.#transformer, src[srcOffset] * 255, src[srcOffset + 1] * 255, src[srcOffset + 2] * 255, src[srcOffset + 3] * 255, css);
+        this.#convertPixel = (src, srcOffset) => qcms_convert_four(this.#transformer, src[srcOffset] * 255, src[srcOffset + 1] * 255, src[srcOffset + 2] * 255, src[srcOffset + 3] * 255);
         break;
       default:
         throw new Error(`Unsupported number of components: ${numComps}`);
@@ -7799,14 +7833,28 @@ class IccColorSpace extends ColorSpace {
     IccColorSpace.#finalizer.register(this, this.#transformer);
   }
   getRgbHex(src, srcOffset) {
-    this.#convertPixel(src, srcOffset, true);
-    return QCMS._cssColor;
+    const color = this.#convertPixel(src, srcOffset);
+    return Util.makeHexColor(color >> 16, color >> 8 & 0xff, color & 0xff);
   }
   getRgbItem(src, srcOffset, dest, destOffset) {
+    const color = this.#convertPixel(src, srcOffset);
+    dest[destOffset] = color >> 16;
+    dest[destOffset + 1] = color >> 8 & 0xff;
+    dest[destOffset + 2] = color & 0xff;
+  }
+  getRgbItems(src, count, dest, destOffset, alpha01) {
+    const {
+      numComps
+    } = this;
+    const length = count * numComps;
+    const scaled = new Uint8Array(length);
+    for (let i = 0; i < length; i++) {
+      scaled[i] = src[i] * 255;
+    }
     QCMS._destBuffer = dest;
     QCMS._destOffset = destOffset;
-    QCMS._destLength = 3;
-    this.#convertPixel(src, srcOffset, false);
+    QCMS._keepAlpha = alpha01 === 1;
+    qcms_convert_array(this.#transformer, scaled, alpha01 === 1);
     QCMS._destBuffer = null;
   }
   getRgbBuffer(src, srcOffset, count, dest, destOffset, bits, alpha01) {
@@ -7817,12 +7865,10 @@ class IccColorSpace extends ColorSpace {
         src[i] *= scale;
       }
     }
-    QCMS._mustAddAlpha = alpha01 && dest.buffer === src.buffer;
     QCMS._destBuffer = dest;
     QCMS._destOffset = destOffset;
-    QCMS._destLength = count * (3 + alpha01);
-    qcms_convert_array(this.#transformer, src);
-    QCMS._mustAddAlpha = false;
+    QCMS._keepAlpha = alpha01 === 1 && dest.buffer !== src.buffer;
+    qcms_convert_array(this.#transformer, src, alpha01 === 1);
     QCMS._destBuffer = null;
   }
   getOutputLength(inputLength, alpha01) {
@@ -7850,7 +7896,6 @@ class IccColorSpace extends ColorSpace {
           });
           isUsable = !!this._module;
           QCMS._memory = this._module.memory;
-          QCMS._makeHexColor = Util.makeHexColor.bind(Util);
         } catch (e) {
           warn(`ICCBased color space: "${e}".`);
         }
@@ -8069,9 +8114,7 @@ class ColorSpaceUtils {
           break;
         case "Pattern":
           baseCS = cs[1] || null;
-          if (baseCS) {
-            baseCS = this.#subParse(baseCS, options);
-          }
+          baseCS &&= this.#subParse(baseCS, options);
           return new PatternCS(baseCS);
         case "I":
         case "Indexed":

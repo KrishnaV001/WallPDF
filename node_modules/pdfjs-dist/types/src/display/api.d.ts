@@ -891,14 +891,12 @@ export class PDFDocumentProxy {
      */
     getPageIndex(ref: RefProxy): Promise<number>;
     /**
-     * @returns {Promise<Object<string, Array<any>>>} A promise that is resolved
+     * @returns {Promise<Map<string, Array<any>>>} A promise that is resolved
      *   with a mapping from named destinations to references.
      *
      * This can be slow for large documents. Use `getDestination` instead.
      */
-    getDestinations(): Promise<{
-        [x: string]: Array<any>;
-    }>;
+    getDestinations(): Promise<Map<string, Array<any>>>;
     /**
      * @param {string} id - The named destination to get.
      * @returns {Promise<Array<any> | null>} A promise that is resolved with all
@@ -923,17 +921,17 @@ export class PDFDocumentProxy {
      */
     getPageMode(): Promise<string>;
     /**
-     * @returns {Promise<Object | null>} A promise that is resolved with an
-     *   {Object} containing the viewer preferences, or `null` when no viewer
-     *   preferences are present in the PDF file.
+     * @returns {Promise<Map | null>} A promise that is resolved with a {Map}
+     *   containing the viewer preferences, or `null` when no viewer preferences
+     *   are present in the PDF file.
      */
-    getViewerPreferences(): Promise<Object | null>;
+    getViewerPreferences(): Promise<Map<any, any> | null>;
     /**
-     * @returns {Promise<any | null>} A promise that is resolved with an {Array}
-     *   containing the destination, or `null` when no open action is present
-     *   in the PDF.
+     * @returns {Promise<Map | null>} A promise that is resolved with a {Map}
+     *   containing a destination or action, or `null` when no open action is
+     *   present in the PDF.
      */
-    getOpenAction(): Promise<any | null>;
+    getOpenAction(): Promise<Map<any, any> | null>;
     /**
      * @returns {Promise<Map<string, CatalogAttachment> | null>}
      *   Promise that is resolved with a lookup table for mapping named
@@ -1186,6 +1184,26 @@ export class PDFDocumentProxy {
      */
     getFieldObjects(): Promise<{
         [x: string]: Array<Object>;
+    } | null>;
+    /**
+     * @returns {Promise<Array<Object> | null>} A promise that is resolved
+     *   with an {Array} of digital signature metadata (signerName, reason,
+     *   signingTime, byteRange, subFilter, …), or `null` when the document
+     *   has no signatures. The PKCS#7 blob and signed-data byte spans
+     *   needed for verification are fetched separately via
+     *   {@link PDFDocumentProxy.getSignatureData} so they don't ride the
+     *   worker boundary unless verification is actually requested.
+     */
+    getSignatures(): Promise<Array<Object> | null>;
+    /**
+     * @param {string} id Signature `id` from a {@link getSignatures} entry.
+     * @returns {Promise<{ data: Uint8Array[], pkcs7: Uint8Array } | null>}
+     *   The byte payload needed to verify the signature, or `null` if the
+     *   id is unknown.
+     */
+    getSignatureData(id: string): Promise<{
+        data: Uint8Array[];
+        pkcs7: Uint8Array;
     } | null>;
     /**
      * @returns {Promise<boolean>} A promise that is resolved with `true`

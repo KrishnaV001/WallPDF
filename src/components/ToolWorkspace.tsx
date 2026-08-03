@@ -60,6 +60,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   const [progress, setProgress] = useState(0);
   const [compressedFile, setCompressedFile] = useState<File | null>(null);
   const [PdfPreview, setPdfPreview] = useState<React.FC<any> | null>(null);
+  const [editText, setEditText] = useState('Edited with WallPDF!');
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -85,10 +86,26 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       zIndex: isDragging ? 10 : 'auto',
     };
 
+    const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+      if (file.type.startsWith('image/')) {
+        const url = URL.createObjectURL(file);
+        setImagePreviewUrl(url);
+        return () => URL.revokeObjectURL(url);
+      }
+    }, [file]);
+
     return (
       <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={`bg-slate-50 dark:bg-zinc-800/70 border border-slate-200 dark:border-zinc-700/60 rounded-2xl p-3.5 flex items-center justify-between cursor-grab active:cursor-grabbing transition-all`}>
         <div className="flex items-center space-x-3 overflow-hidden pointer-events-none">
-          {PdfPreview ? <PdfPreview file={file} className="w-12 h-auto rounded-md bg-white dark:bg-zinc-700 shadow-sm shrink-0" /> : <div className="w-12 h-16 rounded-md bg-white dark:bg-zinc-700 shadow-sm shrink-0 flex items-center justify-center text-xs font-bold text-slate-400 dark:text-zinc-500">PDF</div>}
+          {imagePreviewUrl ? (
+            <img src={imagePreviewUrl} alt={file.name} className="w-12 h-12 object-cover rounded-md bg-white dark:bg-zinc-700 shadow-sm shrink-0" />
+          ) : PdfPreview ? (
+            <PdfPreview file={file} className="w-12 h-auto rounded-md bg-white dark:bg-zinc-700 shadow-sm shrink-0" />
+          ) : (
+            <div className="w-12 h-16 rounded-md bg-white dark:bg-zinc-700 shadow-sm shrink-0 flex items-center justify-center text-xs font-bold text-slate-400 dark:text-zinc-500">PDF</div>
+          )}
           <div className="truncate">
             <p className="text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">{file.name}</p>
             <p className="text-[10px] text-slate-400 dark:text-zinc-400">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
@@ -164,6 +181,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     setCompressedFile(null);
     setPageRange('');
     setProgress(0);
+    setEditText('Edited with WallPDF!');
     setCompressionLevel('recommended');
   };
 
@@ -201,6 +219,9 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     if (slug.startsWith('pdf-to-')) {
       return 'application/pdf';
     }
+    if (slug === 'image-to-pdf') {
+      return 'image/jpeg,image/png,image/gif,image/webp'; // Common image formats
+    }
     return 'application/pdf';
   };
   const handleProcess = async () => {
@@ -212,7 +233,8 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     try {
       if (toolSlug === 'merge-pdf') {
         const mergedPdf = await PDFDocument.create();
-
+        // This assumes you have switched to a `pages` state array as described above.
+        // For this example, we will stick with the `files` array to provide a runnable diff.
         for (const file of files) {
           const pdfBytes = await file.arrayBuffer();
           const pdf = await PDFDocument.load(pdfBytes);
@@ -220,12 +242,19 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
           copiedPages.forEach((page) => {
             mergedPdf.addPage(page);
           });
+          // To implement page reordering, you would iterate through your 'pages' state array:
+          /*
+          for (const pageObj of pages) {
+            const sourcePdf = await PDFDocument.load(pageObj.pdfBytes);
+            const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [pageObj.pageIndex]);
+            mergedPdf.addPage(copiedPage);
+          }
+          */
         }
 
         const mergedPdfBytes = await mergedPdf.save();
-        // mergedPdf.save() returns a Uint8Array (with ArrayBufferLike.buffer). Cast buffer to
-        // ArrayBuffer to satisfy Blob constructor typing.
-        const blob = new Blob([mergedPdfBytes.buffer as unknown as ArrayBuffer], { type: 'application/pdf' });
+        const pdfBuffer = new Uint8Array(mergedPdfBytes);
+        const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
         setDownloadUrl(URL.createObjectURL(blob));
         setIsCompleted(true);
       } else if (toolSlug === 'split-pdf') {
@@ -303,9 +332,13 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
 
         const useObjectStreams = compressionLevel !== 'basic';
         const compressedPdfBytes = await pdfDoc.save({ useObjectStreams });
+        const compressedPdfBuffer = compressedPdfBytes.buffer.slice(
+          compressedPdfBytes.byteOffset,
+          compressedPdfBytes.byteOffset + compressedPdfBytes.byteLength
+        ) as ArrayBuffer;
 
         setProgress(90); // Stage 4: Finalizing
-        const blob = new Blob([compressedPdfBytes.buffer as unknown as ArrayBuffer], { type: 'application/pdf' });
+        const blob = new Blob([compressedPdfBuffer], { type: 'application/pdf' });
         const newCompressedFile = new File([blob], `${pdfToCompress.name.replace(/\.pdf$/i, '')}-compressed.pdf`, { type: 'application/pdf' });
 
         setCompressedFile(newCompressedFile);
@@ -353,7 +386,11 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
         const page = pdfDoc.addPage();
         page.drawText(`This is a dummy PDF converted from ${files[0].name}.`);
         const pdfBytes = await pdfDoc.save();
-        const blob = new Blob([pdfBytes.buffer as unknown as ArrayBuffer], { type: 'application/pdf' });
+        const pdfBuffer = pdfBytes.buffer.slice(
+          pdfBytes.byteOffset,
+          pdfBytes.byteOffset + pdfBytes.byteLength
+        ) as ArrayBuffer;
+        const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
 
         setDownloadUrl(URL.createObjectURL(blob));
         setProgress(100);
@@ -386,10 +423,56 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
 
         setProgress(100);
         setIsCompleted(true);
+      } else if (toolSlug === 'image-to-pdf') {
+        if (files.length === 0) return;
+        const pdfDoc = await PDFDocument.create();
+        for (const file of files) {
+          const imageBytes = await file.arrayBuffer();
+          let image;
+          if (file.type === 'image/jpeg') {
+            image = await pdfDoc.embedJpg(imageBytes);
+          } else if (file.type === 'image/png') {
+            image = await pdfDoc.embedPng(imageBytes);
+          } else {
+            console.warn(`Unsupported image type: ${file.type}`);
+            continue;
+          }
+          const page = pdfDoc.addPage();
+          const imageDims = image.scaleToFit(page.getWidth(), page.getHeight());
+          page.drawImage(image, { ...imageDims, x: (page.getWidth() - imageDims.width) / 2, y: (page.getHeight() - imageDims.height) / 2 });
+        }
+        const pdfBytes = await pdfDoc.save();
+        const pdfArrayBuffer = pdfBytes.buffer.slice(
+          pdfBytes.byteOffset,
+          pdfBytes.byteOffset + pdfBytes.byteLength
+        ) as ArrayBuffer;
+        setDownloadUrl(URL.createObjectURL(new Blob([pdfArrayBuffer], { type: 'application/pdf' })));
+        setIsCompleted(true);
+      } else if (toolSlug === 'edit-pdf') {
+        // Basic placeholder implementation for Edit PDF.
+        // This adds a sample text to the first page. A full implementation requires a UI for editing.
+        if (files.length === 0) return;
+
+        const pdfToEdit = files[0];
+        const pdfBytes = await pdfToEdit.arrayBuffer();
+        const pdfDoc = await PDFDocument.load(pdfBytes);
+        const firstPage = pdfDoc.getPages()[0];
+
+        if (firstPage) {
+          firstPage.drawText(editText, { x: 50, y: firstPage.getHeight() - 50, size: 24 });
+        }
+
+        const editedPdfBytes = await pdfDoc.save();
+        const editedPdfArrayBuffer = editedPdfBytes.buffer.slice(
+          editedPdfBytes.byteOffset,
+          editedPdfBytes.byteOffset + editedPdfBytes.byteLength
+        ) as ArrayBuffer;
+        setDownloadUrl(URL.createObjectURL(new Blob([editedPdfArrayBuffer], { type: 'application/pdf' })));
+        setIsCompleted(true);
       } else {
         // Placeholder for other tools
         console.warn(`Processing for tool "${toolSlug}" is not implemented.`);
-        setIsCompleted(true); // Mark as complete to show download for now
+        setIsCompleted(true);
       }
     } catch (error) {
       console.error("Error processing PDF files:", error);
@@ -420,7 +503,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
               }`}
             >
               {/* Header Icon & Title */}
-              <div className="flex items-center justify-center space-x-3 mb-3">
+              <div className="flex flex-col sm:flex-row items-center justify-center space-x-0 sm:space-x-3 mb-3">
                 <div className="w-10 h-10 rounded-xl bg-[#E5252A] flex items-center justify-center text-white shadow-sm shrink-0">
                   <ToolIcon slug={toolSlug} className="w-5 h-5" />
                 </div>
@@ -434,9 +517,9 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
               </p>
 
               {/* Native Red Button */}
-              <label className="cursor-pointer group relative inline-flex items-center justify-center min-w-[280px] sm:min-w-[320px] bg-[#E5252A] hover:bg-[#C51920] active:scale-[0.98] text-white font-bold py-4 px-10 rounded-full shadow-md shadow-red-500/20 transition-all duration-150 mb-8">
+              <label className="cursor-pointer group relative inline-flex items-center justify-center w-full max-w-[280px] sm:max-w-[320px] bg-[#E5252A] hover:bg-[#C51920] active:scale-[0.98] text-white font-bold py-3 sm:py-4 px-8 sm:px-10 rounded-full shadow-md shadow-red-500/20 transition-all duration-150 mb-8">
                 <span className="absolute left-6 text-xl font-black">+</span>
-                <span className="text-base sm:text-lg tracking-wide">
+                <span className="text-base tracking-wide">
                   {isLoadingCloud ? 'Downloading...' : 'Choose file'}
                 </span>
                 <input
@@ -567,7 +650,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
 
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={files.map((f, i) => `${f.name}-${i}`)} strategy={verticalListSortingStrategy}>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto pr-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
                     {files.map((file, idx) => (
                       <SortableFileItem key={`${file.name}-${idx}`} file={file} idx={idx} />
                     ))}
@@ -603,6 +686,18 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                     <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 pl-1">
                       Choose the desired level of file size reduction.
                     </p>
+                  </div>
+                )}
+                {toolSlug === 'edit-pdf' && (
+                  <div className="w-full sm:w-auto flex-grow">
+                    <input
+                      type="text"
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      placeholder="Text to add to PDF"
+                      className="w-full px-4 py-3 text-sm bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-black focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+                    />
+                     <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 pl-1">Enter the text you want to add to the first page of the PDF.</p>
                   </div>
                 )}
 

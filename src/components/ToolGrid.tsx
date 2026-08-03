@@ -54,7 +54,7 @@ export const ToolGrid: React.FC = () => {
         
         {/* Header */}
         <div className="text-center space-y-4 max-w-3xl mx-auto">
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white transition-colors">
+          <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white transition-colors">
             Fast, Private PDF Tools — Right in Your Browser
           </h1>
           <p className="text-base sm:text-lg text-slate-600 dark:text-zinc-400 max-w-2xl mx-auto font-normal transition-colors">
@@ -75,7 +75,7 @@ export const ToolGrid: React.FC = () => {
                 key={cat.id}
                 type="button"
                 onClick={() => setActiveCategory(cat.id)}
-                className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-semibold transition-all duration-200 border ${
+                className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-semibold transition-all duration-200 border ${
                   isActive
                     ? 'bg-[#E5252A] text-white border-[#E5252A] shadow-md shadow-red-500/20 scale-105'
                     : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700'
@@ -88,7 +88,7 @@ export const ToolGrid: React.FC = () => {
         </div>
 
         {/* Tool Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4">
           {filteredTools.map((tool) => (
             <a
               key={tool.slug}
