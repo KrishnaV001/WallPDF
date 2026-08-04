@@ -22,9 +22,9 @@ const { toolData } = Astro.props;
   title={`${toolData?.title || 'Tool'} — WallPDF`} 
   description={toolData?.description || ''}
 >
-  <div class="bg-[#F8F6F5] min-h-[calc(100vh-4rem)]">
+  <div class="bg-[#F8FAFC] dark:bg-black min-h-[calc(100vh-4rem)]">
     <ToolWorkspace
-      client:load
+      client:only="react"
       toolSlug={toolData.slug}
       toolName={toolData.h1 || toolData.title}
       description={toolData.description}

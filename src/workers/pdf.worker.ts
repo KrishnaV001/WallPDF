@@ -62,6 +62,81 @@ const pdfWorker = {
   async compressPDF(fileBuffer: ArrayBuffer): Promise<Uint8Array> {
     const pdfDoc = await PDFDocument.load(fileBuffer, { updateMetadata: false });
     return await pdfDoc.save({ useObjectStreams: true });
+  },
+
+  async cropPDF(
+    fileBuffer: ArrayBuffer,
+    cropRatio: { left: number; top: number; right: number; bottom: number },
+    applyToAll: boolean,
+    pageRangeStr?: string
+  ): Promise<Uint8Array> {
+    const pdfDoc = await PDFDocument.load(fileBuffer);
+    const pages = pdfDoc.getPages();
+    const totalPages = pages.length;
+
+    let targetIndices: Set<number> = new Set();
+    if (applyToAll || !pageRangeStr || !pageRangeStr.trim()) {
+      for (let i = 0; i < totalPages; i++) targetIndices.add(i);
+    } else {
+      const parts = pageRangeStr.split(',').map(s => s.trim());
+      for (const part of parts) {
+        if (part.includes('-')) {
+          const [startStr, endStr] = part.split('-');
+          const start = parseInt(startStr, 10) - 1;
+          const end = parseInt(endStr, 10) - 1;
+          if (!isNaN(start) && !isNaN(end)) {
+            for (let i = Math.max(0, start); i <= Math.min(totalPages - 1, end); i++) {
+              targetIndices.add(i);
+            }
+          }
+        } else {
+          const p = parseInt(part, 10) - 1;
+          if (!isNaN(p) && p >= 0 && p < totalPages) {
+            targetIndices.add(p);
+          }
+        }
+      }
+    }
+
+    for (let i = 0; i < totalPages; i++) {
+      if (!targetIndices.has(i)) continue;
+      const page = pages[i];
+      const mediaBox = page.getMediaBox();
+      const { x: mX, y: mY, width: mWidth, height: mHeight } = mediaBox;
+      const rotation = ((page.getRotation().angle % 360) + 360) % 360;
+
+      let cropX: number, cropY: number, cropW: number, cropH: number;
+
+      if (rotation === 90) {
+        cropX = mX + cropRatio.top * mWidth;
+        cropY = mY + cropRatio.left * mHeight;
+        cropW = (cropRatio.bottom - cropRatio.top) * mWidth;
+        cropH = (cropRatio.right - cropRatio.left) * mHeight;
+      } else if (rotation === 180) {
+        cropX = mX + (1 - cropRatio.right) * mWidth;
+        cropY = mY + cropRatio.top * mHeight;
+        cropW = (cropRatio.right - cropRatio.left) * mWidth;
+        cropH = (cropRatio.bottom - cropRatio.top) * mHeight;
+      } else if (rotation === 270) {
+        cropX = mX + (1 - cropRatio.bottom) * mWidth;
+        cropY = mY + (1 - cropRatio.right) * mHeight;
+        cropW = (cropRatio.bottom - cropRatio.top) * mWidth;
+        cropH = (cropRatio.right - cropRatio.left) * mHeight;
+      } else {
+        cropX = mX + cropRatio.left * mWidth;
+        cropY = mY + (1 - cropRatio.bottom) * mHeight;
+        cropW = (cropRatio.right - cropRatio.left) * mWidth;
+        cropH = (cropRatio.bottom - cropRatio.top) * mHeight;
+      }
+
+      cropW = Math.max(1, cropW);
+      cropH = Math.max(1, cropH);
+
+      page.setCropBox(cropX, cropY, cropW, cropH);
+      page.setMediaBox(cropX, cropY, cropW, cropH);
+    }
+
+    return await pdfDoc.save();
   }
 };
 

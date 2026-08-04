@@ -1,6 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ToolIcon } from './ToolIcon';
+import { PdfCropEditor } from './PdfCropEditor';
+import { PdfMergeEditor } from './PdfMergeEditor';
 import { PDFDocument } from 'pdf-lib';
+import * as pdfjsLib from 'pdfjs-dist';
 import JSZip from 'jszip';
 import {
   DndContext,
@@ -42,6 +45,59 @@ const Spinner: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) =>
   </svg>
 );
 
+const PdfPreviewCanvas: React.FC<{ file: Blob; desiredWidth?: number; className?: string }> = ({ file, desiredWidth = 250, className = '' }) => {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+
+  React.useEffect(() => {
+    if (!file || !canvasRef.current) {
+      console.log('[PdfPreviewCanvas] File or canvas missing');
+      return;
+    }
+
+    const renderPdf = async () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.error('[PdfPreviewCanvas] Could not get canvas context');
+        return;
+      }
+
+      try {
+        console.log('[PdfPreviewCanvas] Starting to render PDF blob, size:', file.size);
+        const arrayBuffer = await file.arrayBuffer();
+        const typedArray = new Uint8Array(arrayBuffer);
+        const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        const page = await pdf.getPage(1);
+
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = desiredWidth / viewport.width;
+        const scaledViewport = page.getViewport({ scale });
+
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+
+        console.log('[PdfPreviewCanvas] Rendering canvas', canvas.width, 'x', canvas.height);
+
+        await page.render({
+          canvas,
+          canvasContext: ctx,
+          viewport: scaledViewport,
+        }).promise;
+
+        console.log('[PdfPreviewCanvas] PDF rendered successfully');
+      } catch (error) {
+        console.error('[PdfPreviewCanvas] Error rendering PDF:', error);
+      }
+    };
+
+    renderPdf();
+  }, [file, desiredWidth]);
+
+  return <canvas ref={canvasRef} className={className} />;
+};
+
 export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   toolSlug,
   toolName,
@@ -54,13 +110,47 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   const [isCompleted, setIsCompleted] = useState(false);
   const [pageRange, setPageRange] = useState('');
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [customDownloadFileName, setCustomDownloadFileName] = useState<string>('');
   const [originalFileSize, setOriginalFileSize] = useState<number | null>(null);
   const [compressionLevel, setCompressionLevel] = useState('recommended');
   const [compressedFileSize, setCompressedFileSize] = useState<number | null>(null);
   const [progress, setProgress] = useState(0);
   const [compressedFile, setCompressedFile] = useState<File | null>(null);
+  const [cropX, setCropX] = useState(0);
+  const [cropY, setCropY] = useState(0);
+  const [cropWidth, setCropWidth] = useState(0);
+  const [cropHeight, setCropHeight] = useState(0);
+  const [isDrawingCrop, setIsDrawingCrop] = useState(false);
+  const [drawStartPoint, setDrawStartPoint] = useState<{ x: number; y: number } | null>(null);
+
+  const [firstPagePdfFile, setFirstPagePdfFile] = useState<File | null>(null);
+  const [previewRenderedWidth, setPreviewRenderedWidth] = useState(0);
+  const [previewRenderedHeight, setPreviewRenderedHeight] = useState(0);
   const [PdfPreview, setPdfPreview] = useState<React.FC<any> | null>(null);
   const [editText, setEditText] = useState('Edited with WallPDF!');
+  const [pageOrientation, setPageOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [pageSize, setPageSize] = useState<'fit' | 'a4' | 'letter'>('fit');
+  const [margin, setMargin] = useState<'none' | 'small' | 'big'>('none');
+  const [imageToPdfPreviewFile, setImageToPdfPreviewFile] = useState<Blob | null>(null);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+
+  const cropDataRef = useRef<{
+    normalized: { left: number; top: number; right: number; bottom: number };
+    px: { x: number; y: number; width: number; height: number };
+    pt: { x: number; y: number; width: number; height: number };
+    pageRange: string;
+    applyToAll: boolean;
+  }>({
+    normalized: { left: 0, top: 0, right: 1, bottom: 1 },
+    px: { x: 0, y: 0, width: 0, height: 0 },
+    pt: { x: 0, y: 0, width: 0, height: 0 },
+    pageRange: '',
+    applyToAll: true,
+  });
+
+  const handleCropChange = useCallback((cropData: any) => {
+    cropDataRef.current = cropData;
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -99,13 +189,15 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     return (
       <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={`bg-slate-50 dark:bg-zinc-800/70 border border-slate-200 dark:border-zinc-700/60 rounded-2xl p-3.5 flex items-center justify-between cursor-grab active:cursor-grabbing transition-all`}>
         <div className="flex items-center space-x-3 overflow-hidden pointer-events-none">
-          {imagePreviewUrl ? (
-            <img src={imagePreviewUrl} alt={file.name} className="w-12 h-12 object-cover rounded-md bg-white dark:bg-zinc-700 shadow-sm shrink-0" />
-          ) : PdfPreview ? (
-            <PdfPreview file={file} className="w-12 h-auto rounded-md bg-white dark:bg-zinc-700 shadow-sm shrink-0" />
-          ) : (
-            <div className="w-12 h-16 rounded-md bg-white dark:bg-zinc-700 shadow-sm shrink-0 flex items-center justify-center text-xs font-bold text-slate-400 dark:text-zinc-500">PDF</div>
-          )}
+          <div className="w-12 h-12 rounded-lg bg-white dark:bg-zinc-700 shadow-sm shrink-0 overflow-hidden flex items-center justify-center">
+            {imagePreviewUrl ? (
+              <img src={imagePreviewUrl} alt={file.name} className="w-full h-full object-cover" />
+            ) : PdfPreview ? (
+              <PdfPreview file={file} desiredWidth={48} className="w-full h-full object-cover pointer-events-none" />
+            ) : (
+              <div className="text-xs font-bold text-slate-400 dark:text-zinc-500">PDF</div>
+            )}
+          </div>
           <div className="truncate">
             <p className="text-xs font-bold text-slate-800 dark:text-zinc-200 truncate">{file.name}</p>
             <p className="text-[10px] text-slate-400 dark:text-zinc-400">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
@@ -126,6 +218,143 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     }
   }, []);
 
+  const loadFirstPageForCropPreview = useCallback(async (pdfFile: File) => {
+    try {
+      const arrayBuffer = await pdfFile.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1 });
+
+      // Set initial crop dimensions to full page in PDF points.
+      // These will be converted to preview pixels when rendered by PdfPreview.
+      setCropX(0);
+      setCropY(0);
+      setCropWidth(viewport.width);
+      setCropHeight(viewport.height);
+
+      setFirstPagePdfFile(pdfFile);
+
+    } catch (error) {
+      console.error('Error loading first page for crop preview:', error);
+      setFirstPagePdfFile(null);
+    }
+  }, []);
+
+  // Generate preview PDF for image-to-pdf when options or files change
+  useEffect(() => {
+    console.log('[ToolWorkspace] useEffect for image-to-pdf preview triggered.');
+    console.log('[generatePreview Effect] toolSlug:', toolSlug, 'files length:', files.length, 'imageToP dfPreviewFile:', !!imageToPdfPreviewFile);
+    
+    const generateImageToPdfPreview = async () => {
+      if (toolSlug !== 'image-to-pdf') {
+        console.log('[generatePreview] Not image-to-pdf tool, skipping');
+        setImageToPdfPreviewFile(null);
+        return;
+      } else {
+        console.log('[generateImageToPdfPreview] Function entered. Current options:', { pageOrientation, pageSize, margin });
+      }
+      
+      if (files.length === 0) {
+        console.log('[generatePreview] No files, clearing preview');
+        setImageToPdfPreviewFile(null);
+        return;
+      }
+
+      console.log('[generatePreview] Starting preview generation for', files.length, 'files');
+      setIsGeneratingPreview(true);
+      try {
+        const pdfDoc = await PDFDocument.create();
+        
+        // Use only the first image for preview
+        const firstFile = files[0];
+        console.log('[generatePreview] First file:', firstFile.name, 'type:', firstFile.type);
+        const imageBytes = await firstFile.arrayBuffer();
+        let image;
+        
+        if (firstFile.type === 'image/jpeg') {
+          image = await pdfDoc.embedJpg(imageBytes);
+        } else if (firstFile.type === 'image/png') {
+          image = await pdfDoc.embedPng(imageBytes);
+        } else {
+          console.warn(`[generatePreview] Unsupported image type: ${firstFile.type}`);
+          setIsGeneratingPreview(false);
+          return;
+        }
+
+        // Define page sizes (in points)
+        const pageSizes: Record<'a4' | 'letter' | 'fit', { width: number; height: number }> = {
+          a4: { width: 595, height: 842 },
+          letter: { width: 612, height: 792 },
+          fit: { width: 800, height: 600 },
+        };
+
+        // Define margins (in points)
+        const margins: Record<'none' | 'small' | 'big', number> = {
+          none: 0,
+          small: 20,
+          big: 40,
+        };
+
+        const marginValue = margins[margin];
+        let selectedPageSize = pageSizes[pageSize as 'a4' | 'letter' | 'fit'];
+        
+        if (pageSize === 'fit') {
+          const imageWidth = image.width;
+          const imageHeight = image.height;
+          selectedPageSize = { width: imageWidth + marginValue * 2, height: imageHeight + marginValue * 2 };
+          console.log('[generatePreview] Fit mode: image', imageWidth, 'x', imageHeight, '-> page', selectedPageSize.width, 'x', selectedPageSize.height);
+        } else if (pageOrientation === 'landscape') {
+          [selectedPageSize.width, selectedPageSize.height] = [selectedPageSize.height, selectedPageSize.width];
+          console.log('[generatePreview] Landscape mode: page', selectedPageSize.width, 'x', selectedPageSize.height);
+        }
+
+        const page = pdfDoc.addPage([selectedPageSize.width, selectedPageSize.height]);
+        
+        const availableWidth = selectedPageSize.width - marginValue * 2;
+        const availableHeight = selectedPageSize.height - marginValue * 2;
+        
+        const imageDims = image.scaleToFit(availableWidth, availableHeight);
+        
+        const x = marginValue + (availableWidth - imageDims.width) / 2;
+        const y = marginValue + (availableHeight - imageDims.height) / 2;
+        
+        page.drawImage(image, { ...imageDims, x, y });
+
+        const pdfBytes = await pdfDoc.save();
+        const pdfBuffer = pdfBytes.buffer.slice(
+          pdfBytes.byteOffset,
+          pdfBytes.byteOffset + pdfBytes.byteLength
+        ) as ArrayBuffer;
+        const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
+        console.log('[generatePreview] Generated PDF blob:', blob.size, 'bytes, new object:', blob !== imageToPdfPreviewFile);
+        console.log('[generatePreview] Generated PDF blob:', blob.size, 'bytes');
+        
+        setImageToPdfPreviewFile(blob);
+      } catch (error) {
+        console.error('[generatePreview] Error generating image-to-pdf preview:', error);
+        setImageToPdfPreviewFile(null);
+      } finally {
+        setIsGeneratingPreview(false);
+      }
+    };
+
+    generateImageToPdfPreview();
+  }, [files, pageOrientation, pageSize, margin, toolSlug]);
+
+  // Callback to get the actual rendered dimensions of the PdfPreview component
+  const handlePreviewRender = useCallback((width: number, height: number) => {
+    setPreviewRenderedWidth(width);
+    setPreviewRenderedHeight(height);
+    // When the preview renders, if crop dimensions haven't been set (e.g., first load),
+    // set them to the full preview size. This ensures the visual crop box matches the preview initially.
+    // We only do this if cropWidth/Height are 0, to avoid resetting user-defined crop area.
+    if (cropWidth === 0 && cropHeight === 0) {
+      setCropWidth(width);
+      setCropHeight(height);
+    }
+  }, []);
+
+
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
@@ -139,13 +368,17 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       let newFiles = Array.from(e.dataTransfer.files);
       console.log('[ToolWorkspace] drop files:', newFiles.map(f => f.name));
-      if (toolSlug === 'split-pdf' || toolSlug === 'compress-pdf' || toolSlug === 'pdf-to-word' || toolSlug === 'pdf-to-powerpoint' || toolSlug === 'pdf-to-excel' || toolSlug === 'word-to-pdf') {
+      if (['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf'].includes(toolSlug)) {
         setFiles([newFiles[0]]); // Replace with the first new file
+        if (toolSlug === 'crop-pdf') {
+          loadFirstPageForCropPreview(newFiles[0]);
+        }
       } else {
         setFiles((prev) => [...prev, ...newFiles]);
       }
       setIsCompleted(false);
       setOriginalFileSize(null);
+      setFirstPagePdfFile(null);
       setCompressedFileSize(null);
       setCompressedFile(null);
     }
@@ -155,21 +388,37 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     if (e.target.files && e.target.files.length > 0) {
       let newFiles = Array.from(e.target.files!);
       console.log('[ToolWorkspace] input files:', newFiles.map(f => f.name));
-      if (toolSlug === 'split-pdf' || toolSlug === 'compress-pdf' || toolSlug === 'pdf-to-word' || toolSlug === 'pdf-to-powerpoint' || toolSlug === 'pdf-to-excel' || toolSlug === 'word-to-pdf') {
+      if (['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf'].includes(toolSlug)) {
         setFiles([newFiles[0]]); // Replace with the first new file
+        if (toolSlug === 'crop-pdf') {
+          loadFirstPageForCropPreview(newFiles[0]);
+        }
       } else {
         setFiles((prev) => [...prev, ...newFiles]);
       }
       setIsCompleted(false);
       setOriginalFileSize(null);
       setCompressedFileSize(null);
-      setCompressedFile(null);
+      setCompressedFile(null); //
+      setCropX(0); setCropY(0); setCropWidth(0); setCropHeight(0);
+      setPreviewRenderedWidth(0); setPreviewRenderedHeight(0);
     }
   };
 
   const handleRemoveFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
-    if (files.length <= 1) setIsCompleted(false);
+    if (files.length <= 1) {
+      setIsCompleted(false);
+      if (toolSlug === 'crop-pdf') {
+        setFirstPagePdfFile(null);
+        setCropX(0);
+        setCropY(0);
+        setCropWidth(0);
+        setCropHeight(0);
+        setPreviewRenderedWidth(0);
+        setPreviewRenderedHeight(0);
+      }
+    }
   };
 
   const handleClearAll = () => {
@@ -178,19 +427,31 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     setDownloadUrl(null);
     setOriginalFileSize(null);
     setCompressedFileSize(null);
+    setCropX(0);
+    setCropY(0);
+    setCropWidth(0);
+    setCropHeight(0);
+    setPreviewRenderedWidth(0);
+    setPreviewRenderedHeight(0);
+    setFirstPagePdfFile(null);
     setCompressedFile(null);
     setPageRange('');
     setProgress(0);
     setEditText('Edited with WallPDF!');
     setCompressionLevel('recommended');
+    setPageOrientation('portrait');
+    setPageSize('fit');
+    setMargin('none');
+    setImageToPdfPreviewFile(null);
   };
 
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
+    if (!over) return;
     if (active.id !== over.id) {
       setFiles((items) => {
-        const oldIndex = items.findIndex((f, i) => `${f.name}-${i}` === active.id);
-        const newIndex = items.findIndex((f, i) => `${f.name}-${i}` === over.id);
+        const oldIndex = items.findIndex((f) => `${f.name}-${f.lastModified}-${f.size}` === active.id);
+        const newIndex = items.findIndex((f) => `${f.name}-${f.lastModified}-${f.size}` === over.id);
         return arrayMove(items, oldIndex, newIndex);
       });
     }
@@ -217,6 +478,9 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       return '.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     }
     if (slug.startsWith('pdf-to-')) {
+      return 'application/pdf';
+    }
+    if (slug === 'crop-pdf') {
       return 'application/pdf';
     }
     if (slug === 'image-to-pdf') {
@@ -426,6 +690,23 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       } else if (toolSlug === 'image-to-pdf') {
         if (files.length === 0) return;
         const pdfDoc = await PDFDocument.create();
+        
+        // Define page sizes (in points)
+        const pageSizes: Record<'a4' | 'letter' | 'fit', { width: number; height: number }> = {
+          a4: { width: 595, height: 842 }, // 210mm x 297mm
+          letter: { width: 612, height: 792 }, // 8.5in x 11in
+          fit: { width: 800, height: 600 }, // Default, will be adjusted per image
+        };
+
+        // Define margins (in points)
+        const margins: Record<'none' | 'small' | 'big', number> = {
+          none: 0,
+          small: 20,
+          big: 40,
+        };
+
+        const marginValue = margins[margin];
+        
         for (const file of files) {
           const imageBytes = await file.arrayBuffer();
           let image;
@@ -437,9 +718,33 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
             console.warn(`Unsupported image type: ${file.type}`);
             continue;
           }
-          const page = pdfDoc.addPage();
-          const imageDims = image.scaleToFit(page.getWidth(), page.getHeight());
-          page.drawImage(image, { ...imageDims, x: (page.getWidth() - imageDims.width) / 2, y: (page.getHeight() - imageDims.height) / 2 });
+
+          // Determine page dimensions based on orientation and size
+          let selectedPageSize = pageSizes[pageSize as 'a4' | 'letter' | 'fit'];
+          if (pageSize === 'fit') {
+            // For fit mode, use image dimensions or a reasonable default
+            const imageWidth = image.width;
+            const imageHeight = image.height;
+            selectedPageSize = { width: imageWidth + marginValue * 2, height: imageHeight + marginValue * 2 };
+          } else if (pageOrientation === 'landscape') {
+            // Swap dimensions for landscape
+            [selectedPageSize.width, selectedPageSize.height] = [selectedPageSize.height, selectedPageSize.width];
+          }
+
+          const page = pdfDoc.addPage([selectedPageSize.width, selectedPageSize.height]);
+          
+          // Calculate available space for the image (excluding margins)
+          const availableWidth = selectedPageSize.width - marginValue * 2;
+          const availableHeight = selectedPageSize.height - marginValue * 2;
+          
+          // Scale image to fit available space while maintaining aspect ratio
+          const imageDims = image.scaleToFit(availableWidth, availableHeight);
+          
+          // Center the image within the available space
+          const x = marginValue + (availableWidth - imageDims.width) / 2;
+          const y = marginValue + (availableHeight - imageDims.height) / 2;
+          
+          page.drawImage(image, { ...imageDims, x, y });
         }
         const pdfBytes = await pdfDoc.save();
         const pdfArrayBuffer = pdfBytes.buffer.slice(
@@ -469,17 +774,103 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
         ) as ArrayBuffer;
         setDownloadUrl(URL.createObjectURL(new Blob([editedPdfArrayBuffer], { type: 'application/pdf' })));
         setIsCompleted(true);
-      } else {
-        // Placeholder for other tools
-        console.warn(`Processing for tool "${toolSlug}" is not implemented.`);
+      } else if (toolSlug === 'crop-pdf') {
+        if (files.length === 0) return;
+        const pdfToCrop = files[0];
+        const pdfBytes = await pdfToCrop.arrayBuffer();
+
+        setProgress(25);
+
+        const cropInfo = cropDataRef.current;
+        const cropRatio = cropInfo.normalized;
+        const applyToAll = cropInfo.applyToAll;
+        const pageRangeStr = cropInfo.pageRange;
+
+        const pdfDoc = await PDFDocument.load(pdfBytes);
+        const pages = pdfDoc.getPages();
+        const totalPages = pages.length;
+
+        setProgress(50);
+
+        let targetIndices: Set<number> = new Set();
+        if (applyToAll || !pageRangeStr || !pageRangeStr.trim()) {
+          for (let i = 0; i < totalPages; i++) targetIndices.add(i);
+        } else {
+          const parts = pageRangeStr.split(',').map(s => s.trim());
+          for (const part of parts) {
+            if (part.includes('-')) {
+              const [startStr, endStr] = part.split('-');
+              const start = parseInt(startStr, 10) - 1;
+              const end = parseInt(endStr, 10) - 1;
+              if (!isNaN(start) && !isNaN(end)) {
+                for (let i = Math.max(0, start); i <= Math.min(totalPages - 1, end); i++) {
+                  targetIndices.add(i);
+                }
+              }
+            } else {
+              const p = parseInt(part, 10) - 1;
+              if (!isNaN(p) && p >= 0 && p < totalPages) {
+                targetIndices.add(p);
+              }
+            }
+          }
+        }
+
+        for (let i = 0; i < totalPages; i++) {
+          if (!targetIndices.has(i)) continue;
+          const page = pages[i];
+          const mediaBox = page.getMediaBox();
+          const { x: mX, y: mY, width: mWidth, height: mHeight } = mediaBox;
+          const rotation = ((page.getRotation().angle % 360) + 360) % 360;
+
+          let cropX: number, cropY: number, cropW: number, cropH: number;
+
+          if (rotation === 90) {
+            cropX = mX + cropRatio.top * mWidth;
+            cropY = mY + cropRatio.left * mHeight;
+            cropW = (cropRatio.bottom - cropRatio.top) * mWidth;
+            cropH = (cropRatio.right - cropRatio.left) * mHeight;
+          } else if (rotation === 180) {
+            cropX = mX + (1 - cropRatio.right) * mWidth;
+            cropY = mY + cropRatio.top * mHeight;
+            cropW = (cropRatio.right - cropRatio.left) * mWidth;
+            cropH = (cropRatio.bottom - cropRatio.top) * mHeight;
+          } else if (rotation === 270) {
+            cropX = mX + (1 - cropRatio.bottom) * mWidth;
+            cropY = mY + (1 - cropRatio.right) * mHeight;
+            cropW = (cropRatio.bottom - cropRatio.top) * mWidth;
+            cropH = (cropRatio.right - cropRatio.left) * mHeight;
+          } else {
+            cropX = mX + cropRatio.left * mWidth;
+            cropY = mY + (1 - cropRatio.bottom) * mHeight;
+            cropW = (cropRatio.right - cropRatio.left) * mWidth;
+            cropH = (cropRatio.bottom - cropRatio.top) * mHeight;
+          }
+
+          cropW = Math.max(1, cropW);
+          cropH = Math.max(1, cropH);
+
+          page.setCropBox(cropX, cropY, cropW, cropH);
+          page.setMediaBox(cropX, cropY, cropW, cropH);
+        }
+
+        setProgress(85);
+
+        const croppedPdfBytes = await pdfDoc.save();
+        const croppedArrayBuffer = croppedPdfBytes.buffer.slice(
+          croppedPdfBytes.byteOffset,
+          croppedPdfBytes.byteOffset + croppedPdfBytes.byteLength
+        ) as ArrayBuffer;
+
+        const blob = new Blob([croppedArrayBuffer], { type: 'application/pdf' });
+        setDownloadUrl(URL.createObjectURL(blob));
+        setProgress(100);
         setIsCompleted(true);
       }
-    } catch (error) {
-      console.error("Error processing PDF files:", error);
-      // You might want to set an error state here to show a message to the user
+    } catch (err) {
+      console.error('Error processing PDF:', err);
     } finally {
       setIsProcessing(false);
-      setProgress(0);
     }
   };
 
@@ -593,7 +984,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
               {toolSlug === 'compress-pdf' && compressedFile && PdfPreview && (
                 <div className="flex flex-col items-center gap-4">
                   <div className="w-48 p-2 border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900">
-                    <PdfPreview file={compressedFile} className="w-full h-auto rounded-md bg-white dark:bg-zinc-700 shadow-sm" />
+                    <PdfPreview file={compressedFile} desiredWidth={180} className="w-full h-auto rounded-md bg-white dark:bg-zinc-700 shadow-sm" />
                   </div>
                   {originalFileSize && compressedFileSize && (
                     <div className="text-center text-sm text-slate-600 dark:text-zinc-300">
@@ -658,6 +1049,12 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                 </SortableContext>
               </DndContext>
 
+              {toolSlug === 'crop-pdf' && files.length > 0 && (
+                <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 w-full">
+                  <PdfCropEditor file={files[0]} onCropChange={handleCropChange} />
+                </div>
+              )}
+
               <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-end gap-4">
                 {toolSlug === 'split-pdf' && (
                   <div className="w-full sm:w-auto flex-grow">
@@ -698,6 +1095,188 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                       className="w-full px-4 py-3 text-sm bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-black focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
                     />
                      <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 pl-1">Enter the text you want to add to the first page of the PDF.</p>
+                  </div>
+                )}
+
+                {toolSlug === 'image-to-pdf' && (
+                  <div className="w-full space-y-4 bg-slate-50 dark:bg-zinc-800/50 p-5 rounded-xl border border-slate-200 dark:border-zinc-700">
+                    <h4 className="font-semibold text-slate-900 dark:text-white text-sm mb-4">PDF Options</h4>
+                    
+                    {/* Page Orientation */}
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">Page Orientation</label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setPageOrientation('portrait')}
+                          className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+                            pageOrientation === 'portrait'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="6" y="2" width="12" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" rx="1"/>
+                            <line x1="10" y1="7" x2="14" y2="7" stroke="currentColor" strokeWidth="1"/>
+                          </svg>
+                          Portrait
+                        </button>
+                        <button
+                          onClick={() => setPageOrientation('landscape')}
+                          className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+                            pageOrientation === 'landscape'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="2" y="6" width="20" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" rx="1"/>
+                            <line x1="7" y1="10" x2="7" y2="14" stroke="currentColor" strokeWidth="1"/>
+                          </svg>
+                          Landscape
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Page Size */}
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">Page Size</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => setPageSize('fit')}
+                          className={`py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5 ${
+                            pageSize === 'fit'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M3 3h18v18H3z" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                            <path d="M6 12l4-4 3 3 5-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          Fit
+                        </button>
+                        <button
+                          onClick={() => setPageSize('a4')}
+                          className={`py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5 ${
+                            pageSize === 'a4'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="5" y="2" width="14" height="20" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                            <line x1="8" y1="6" x2="16" y2="6" stroke="currentColor" strokeWidth="1"/>
+                            <line x1="8" y1="10" x2="16" y2="10" stroke="currentColor" strokeWidth="1"/>
+                            <line x1="8" y1="14" x2="16" y2="14" stroke="currentColor" strokeWidth="1"/>
+                          </svg>
+                          A4
+                        </button>
+                        <button
+                          onClick={() => setPageSize('letter')}
+                          className={`py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5 ${
+                            pageSize === 'letter'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="5" y="2" width="14" height="20" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                            <line x1="8" y1="6" x2="16" y2="6" stroke="currentColor" strokeWidth="1"/>
+                            <line x1="8" y1="10" x2="16" y2="10" stroke="currentColor" strokeWidth="1"/>
+                            <line x1="8" y1="14" x2="16" y2="14" stroke="currentColor" strokeWidth="1"/>
+                          </svg>
+                          Letter
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Margin */}
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">Margin</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          onClick={() => setMargin('none')}
+                          className={`py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5 ${
+                            margin === 'none'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="3" y="3" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                          </svg>
+                          None
+                        </button>
+                        <button
+                          onClick={() => setMargin('small')}
+                          className={`py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5 ${
+                            margin === 'small'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="2" y="2" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                            <rect x="5" y="5" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+                          </svg>
+                          Small
+                        </button>
+                        <button
+                          onClick={() => setMargin('big')}
+                          className={`py-2.5 px-3 rounded-lg font-medium text-sm transition-all flex items-center justify-center gap-1.5 ${
+                            margin === 'big'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <rect x="2" y="2" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                            <rect x="4" y="4" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+                          </svg>
+                          Big
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* PDF Preview */}
+                    {imageToPdfPreviewFile && !isGeneratingPreview && (
+                      <div className="space-y-2 border-t border-slate-200 dark:border-zinc-600 pt-4 mt-4">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                          Preview
+                          {/* Add a visual indicator for changes if needed for debugging */}
+                          {/* <span className="ml-2 text-red-500">{Math.random().toFixed(2)}</span> */}
+                        </label>
+                        <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg p-3 max-h-[400px] overflow-y-auto flex flex-col items-center justify-center min-h-[200px]">
+                          <PdfPreviewCanvas
+                            key={imageToPdfPreviewFile.size + '-' + pageOrientation + '-' + pageSize + '-' + margin} // Force re-mount on relevant changes
+                            file={imageToPdfPreviewFile}
+                            desiredWidth={250}
+                            className="rounded-md shadow-sm"
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-zinc-400">Live preview of your PDF with current settings</p>
+                      </div>
+                    )}
+
+                    {!imageToPdfPreviewFile && files.length > 0 && !isGeneratingPreview && toolSlug === 'image-to-pdf' && (
+                      <div className="space-y-2 border-t border-slate-200 dark:border-zinc-600 pt-4 mt-4">
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          ⚠️ Preview could not be generated. Check browser console for errors.
+                        </p>
+                      </div>
+                    )}
+
+                    {isGeneratingPreview && (
+                      <div className="space-y-2 border-t border-slate-200 dark:border-zinc-600 pt-4 mt-4">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">Preview</label>
+                        <div className="bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg p-4 h-[200px] flex items-center justify-center">
+                          <div className="flex flex-col items-center gap-2">
+                            <Spinner className="w-6 h-6 text-slate-600 dark:text-zinc-300" />
+                            <p className="text-xs text-slate-600 dark:text-zinc-300">Generating preview...</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

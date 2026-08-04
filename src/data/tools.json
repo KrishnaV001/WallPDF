@@ -86,5 +86,13 @@
     "description": "Convert JPG, PNG, and other image formats to PDF.",
     "category": "Convert PDF",
     "color": "purple"
-  }
+  },
+  {
+  "slug": "crop-pdf",
+  "title": "Crop PDF",
+  "h1": "Crop PDF",
+  "description": "Visually select the area to keep and crop your PDF pages to a new, smaller size.",
+  "category": "Edit PDF",
+  "color": "purple"
+  } 
 ]

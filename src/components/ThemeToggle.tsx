@@ -6,7 +6,17 @@ export const ThemeToggle: React.FC = () => {
 
   useEffect(() => {
     setMounted(true);
-    setIsDark(document.documentElement.classList.contains('dark'));
+    // Check localStorage first, then system preference as a fallback.
+    const userTheme = localStorage.getItem('theme');
+    const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const newIsDark = userTheme === 'dark' || (userTheme === null && systemIsDark);
+
+    setIsDark(newIsDark);
+    if (newIsDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   }, []);
 
   const toggleTheme = () => {

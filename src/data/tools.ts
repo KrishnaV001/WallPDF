@@ -49,5 +49,13 @@ export const tools: Tool[] = [
     description: 'Add text, shapes, comments and highlights to your PDF.',
     category: 'Edit PDF',
     color: 'purple',
+  },
+  {
+    slug: 'image-to-pdf',
+    title: 'Image to PDF',
+    h1: 'Convert Images to PDF',
+    description: 'Convert images (JPG, PNG) to PDF with custom page size and orientation.',
+    category: 'Convert to PDF',
+    color: 'blue',
   }
 ];
