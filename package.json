@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "vercel-build": "npm install shiki@1.23.1 --no-save && astro build"
   },
   "dependencies": {
     "@astrojs/react": "^4.1.0",
@@ -35,4 +36,6 @@
     "@types/uuid": "^10.0.0",
     "typescript": "^5.7.2"
   }
+  
 }
+
