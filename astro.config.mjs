@@ -1,18 +1,14 @@
 import { defineConfig } from 'astro/config';
 import react from '@astrojs/react';
-import tailwind from '@astrojs/tailwind';
+import tailwindv4 from '@tailwindcss/vite';
 
 export default defineConfig({
   integrations: [
-    react(),
-    tailwind({
-      applyBaseStyles: true,
-    }),
+    react()
   ],
   vite: {
-    ssr: {
-      // Prevents Vite from bundling Shiki natively and dropping its server paths
-      external: ['shiki']
-    }
+    plugins: [
+      tailwindv4() // Natively highlights and injects styles inside Vite v8
+    ]
   }
 });
