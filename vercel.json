@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "pages/**/*.func": {
+      "includeFiles": "node_modules/shiki/**"
+    }
+  }
+}
