@@ -3,7 +3,11 @@ export default {
   darkMode: 'class', // <--- CRITICAL: Tells Tailwind to listen to the .dark class
   content: ['./src/**/*.{astro,html,js,jsx,md,mdx,svelte,ts,tsx,vue}'],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+      },
+    },
   },
   plugins: [],
 };

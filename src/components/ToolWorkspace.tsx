@@ -2,7 +2,8 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ToolIcon } from './ToolIcon';
 import { PdfCropEditor } from './PdfCropEditor';
 import { PdfMergeEditor } from './PdfMergeEditor';
-import { PDFDocument } from 'pdf-lib';
+import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs for merged pages
+import { PDFDocument } from 'pdf-lib'; 
 import * as pdfjsLib from 'pdfjs-dist';
 import JSZip from 'jszip';
 import {
@@ -14,7 +15,17 @@ import {
   useSensors,
 } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { CSS } from '@dnd-kit/utilities'; // Keep this line as it's part of the selection
+import { PdfPreview } from './PdfPreview'; // Import the dedicated PdfPreview component
+
+interface MergedPage {
+  id: string; // Unique ID for DND-kit
+  originalFile: File; // Reference to the original uploaded file
+  originalPageIndex: number; // 0-indexed page number within the original file
+  fileName: string; // Name of the original file
+  previewBlob: Blob | null; // A Blob representing the rendered page for preview
+  isLoadingPreview: boolean; // New flag to indicate if preview is being generated
+}
 
 interface ToolWorkspaceProps {
   toolSlug: string;
@@ -45,59 +56,6 @@ const Spinner: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) =>
   </svg>
 );
 
-const PdfPreviewCanvas: React.FC<{ file: Blob; desiredWidth?: number; className?: string }> = ({ file, desiredWidth = 250, className = '' }) => {
-  const canvasRef = React.useRef<HTMLCanvasElement>(null);
-
-  React.useEffect(() => {
-    if (!file || !canvasRef.current) {
-      console.log('[PdfPreviewCanvas] File or canvas missing');
-      return;
-    }
-
-    const renderPdf = async () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        console.error('[PdfPreviewCanvas] Could not get canvas context');
-        return;
-      }
-
-      try {
-        console.log('[PdfPreviewCanvas] Starting to render PDF blob, size:', file.size);
-        const arrayBuffer = await file.arrayBuffer();
-        const typedArray = new Uint8Array(arrayBuffer);
-        const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
-        const page = await pdf.getPage(1);
-
-        const viewport = page.getViewport({ scale: 1 });
-        const scale = desiredWidth / viewport.width;
-        const scaledViewport = page.getViewport({ scale });
-
-        canvas.width = scaledViewport.width;
-        canvas.height = scaledViewport.height;
-
-        console.log('[PdfPreviewCanvas] Rendering canvas', canvas.width, 'x', canvas.height);
-
-        await page.render({
-          canvas,
-          canvasContext: ctx,
-          viewport: scaledViewport,
-        }).promise;
-
-        console.log('[PdfPreviewCanvas] PDF rendered successfully');
-      } catch (error) {
-        console.error('[PdfPreviewCanvas] Error rendering PDF:', error);
-      }
-    };
-
-    renderPdf();
-  }, [file, desiredWidth]);
-
-  return <canvas ref={canvasRef} className={className} />;
-};
-
 export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   toolSlug,
   toolName,
@@ -116,23 +74,23 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   const [compressedFileSize, setCompressedFileSize] = useState<number | null>(null);
   const [progress, setProgress] = useState(0);
   const [compressedFile, setCompressedFile] = useState<File | null>(null);
-  const [cropX, setCropX] = useState(0);
+  const [cropX, setCropX] = useState(0); // Keep this line as it's part of the selection
   const [cropY, setCropY] = useState(0);
   const [cropWidth, setCropWidth] = useState(0);
   const [cropHeight, setCropHeight] = useState(0);
   const [isDrawingCrop, setIsDrawingCrop] = useState(false);
   const [drawStartPoint, setDrawStartPoint] = useState<{ x: number; y: number } | null>(null);
 
-  const [firstPagePdfFile, setFirstPagePdfFile] = useState<File | null>(null);
-  const [previewRenderedWidth, setPreviewRenderedWidth] = useState(0);
+  const [previewRenderedWidth, setPreviewRenderedWidth] = useState(0); // Keep this line as it's part of the selection
   const [previewRenderedHeight, setPreviewRenderedHeight] = useState(0);
-  const [PdfPreview, setPdfPreview] = useState<React.FC<any> | null>(null);
   const [editText, setEditText] = useState('Edited with WallPDF!');
   const [pageOrientation, setPageOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [pageSize, setPageSize] = useState<'fit' | 'a4' | 'letter'>('fit');
   const [margin, setMargin] = useState<'none' | 'small' | 'big'>('none');
+  const [mergedPages, setMergedPages] = useState<MergedPage[]>([]);
   const [imageToPdfPreviewFile, setImageToPdfPreviewFile] = useState<Blob | null>(null);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const pdfDocuments = useRef<Map<File, PDFDocument>>(new Map()); // Cache loaded PDF documents
 
   const cropDataRef = useRef<{
     normalized: { left: number; top: number; right: number; bottom: number };
@@ -148,6 +106,12 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     applyToAll: true,
   });
 
+  const hasFilesOrPages = toolSlug === 'merge-pdf' ? mergedPages.length > 0 : files.length > 0;
+
+  const handleMergedPageReorder = useCallback((newPages: MergedPage[]) => {
+    setMergedPages(newPages);
+  }, []);
+
   const handleCropChange = useCallback((cropData: any) => {
     cropDataRef.current = cropData;
   }, []);
@@ -159,7 +123,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     })
   );
 
-  const SortableFileItem: React.FC<{ file: File, idx: number }> = ({ file, idx }) => {
+  const SortableFileItem: React.FC<{ file: File; idx: number; onRemove: (index: number) => void }> = ({ file, idx, onRemove }) => {
     const {
       attributes,
       listeners,
@@ -189,7 +153,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     return (
       <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={`bg-slate-50 dark:bg-zinc-800/70 border border-slate-200 dark:border-zinc-700/60 rounded-2xl p-3.5 flex items-center justify-between cursor-grab active:cursor-grabbing transition-all`}>
         <div className="flex items-center space-x-3 overflow-hidden pointer-events-none">
-          <div className="w-12 h-12 rounded-lg bg-white dark:bg-zinc-700 shadow-sm shrink-0 overflow-hidden flex items-center justify-center">
+          <div className="w-12 h-12 rounded-lg bg-white dark:bg-zinc-700 shadow-sm shrink-0 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-400 dark:text-zinc-500">
             {imagePreviewUrl ? (
               <img src={imagePreviewUrl} alt={file.name} className="w-full h-full object-cover" />
             ) : PdfPreview ? (
@@ -203,23 +167,17 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
             <p className="text-[10px] text-slate-400 dark:text-zinc-400">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
           </div>
         </div>
-        <button onClick={() => handleRemoveFile(idx)} className="p-1 rounded-lg text-slate-400 hover:text-[#E5252A] transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+        <button onClick={() => onRemove(idx)} className="p-1 rounded-lg text-slate-400 hover:text-[#E5252A] transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
       </div>
     );
   };
 
-  useEffect(() => {
-    const loadPreview = async () => {
-      const { PdfPreview: PreviewComponent } = await import('./PdfPreview');
-      setPdfPreview(() => PreviewComponent);
-    };
-    if (typeof window !== 'undefined') {
-      loadPreview();
-    }
-  }, []);
-
-  const loadFirstPageForCropPreview = useCallback(async (pdfFile: File) => {
+  const loadFirstPageForCropPreview = useCallback(async (pdfFile: File | null) => { // Keep this line as it's part of the selection
     try {
+      if (!pdfFile) {
+        console.warn('No PDF file provided for crop preview.');
+        return;
+      }
       const arrayBuffer = await pdfFile.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       const page = await pdf.getPage(1);
@@ -232,16 +190,13 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       setCropWidth(viewport.width);
       setCropHeight(viewport.height);
 
-      setFirstPagePdfFile(pdfFile);
-
     } catch (error) {
       console.error('Error loading first page for crop preview:', error);
-      setFirstPagePdfFile(null);
     }
   }, []);
 
   // Generate preview PDF for image-to-pdf when options or files change
-  useEffect(() => {
+  useEffect(() => { // Keep this line as it's part of the selection
     console.log('[ToolWorkspace] useEffect for image-to-pdf preview triggered.');
     console.log('[generatePreview Effect] toolSlug:', toolSlug, 'files length:', files.length, 'imageToP dfPreviewFile:', !!imageToPdfPreviewFile);
     
@@ -342,7 +297,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   }, [files, pageOrientation, pageSize, margin, toolSlug]);
 
   // Callback to get the actual rendered dimensions of the PdfPreview component
-  const handlePreviewRender = useCallback((width: number, height: number) => {
+  const handlePreviewRender = useCallback((width: number, height: number) => { // Keep this line as it's part of the selection
     setPreviewRenderedWidth(width);
     setPreviewRenderedHeight(height);
     // When the preview renders, if crop dimensions haven't been set (e.g., first load),
@@ -362,35 +317,168 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
 
   const handleDragLeave = () => setIsDragging(false);
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      let newFiles = Array.from(e.dataTransfer.files);
-      console.log('[ToolWorkspace] drop files:', newFiles.map(f => f.name));
-      if (['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf'].includes(toolSlug)) {
-        setFiles([newFiles[0]]); // Replace with the first new file
-        if (toolSlug === 'crop-pdf') {
-          loadFirstPageForCropPreview(newFiles[0]);
+      const newFiles = Array.from(e.dataTransfer.files);
+      console.log('[ToolWorkspace] drop files:', newFiles.map((f) => f.name));
+
+      if (toolSlug === 'merge-pdf') {
+        const pagesWithLoadingState: MergedPage[] = [];
+        const newMergedPages: MergedPage[] = [];
+        for (const file of newFiles) {
+          if (file.type === 'application/pdf') {
+            const pdfDoc = await PDFDocument.load(await file.arrayBuffer());
+            pdfDocuments.current.set(file, pdfDoc);
+
+            // For preview, use pdfjsLib to render each page to a canvas and create a Blob
+            const pdfDocJs = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+            for (let i = 0; i < pdfDocJs.numPages; i++) {
+              pagesWithLoadingState.push({
+                id: uuidv4(),
+                originalFile: file,
+                originalPageIndex: i,
+                fileName: file.name,
+                previewBlob: null, // Initially null
+                isLoadingPreview: true, // Initially true
+              });
+            }
+          }
         }
+        // Add all new pages to state immediately with loading indicators
+        setMergedPages((prev) => [...prev, ...pagesWithLoadingState]);
+
+        // Now, asynchronously generate previews and update state
+        pagesWithLoadingState.forEach(async (pageToProcess) => {
+          try {
+            const pdfDocJs = await pdfjsLib.getDocument({ data: await pageToProcess.originalFile.arrayBuffer() }).promise;
+            const pageJs = await pdfDocJs.getPage(pageToProcess.originalPageIndex + 1);
+            const viewport = pageJs.getViewport({ scale: 1 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error("Could not get canvas context");
+
+            const desiredWidth = 64;
+            const scale = desiredWidth / viewport.width;
+            const scaledViewport = pageJs.getViewport({ scale });
+
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+
+            await pageJs.render({ canvas: canvas, canvasContext: context, viewport: scaledViewport }).promise;
+
+            const previewBlob = await new Promise<Blob | null>((resolve) => {
+              canvas.toBlob((blob) => resolve(blob), 'image/png');
+            });
+
+            setMergedPages((prev) =>
+              prev.map((p) =>
+                p.id === pageToProcess.id
+                  ? { ...p, previewBlob: previewBlob, isLoadingPreview: false }
+                  : p
+              )
+            );
+          } catch (error) {
+            console.error(`Error generating preview for page ${pageToProcess.originalPageIndex} of ${pageToProcess.fileName}:`, error);
+            setMergedPages((prev) =>
+              prev.map((p) =>
+                p.id === pageToProcess.id
+                  ? { ...p, isLoadingPreview: false } // Set to false even on error
+                  : p
+              )
+            );
+          }
+        });
+      } else if (['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf'].includes(toolSlug)) {
+        setFiles([newFiles[0]]); // Replace with the first new file
+        if (toolSlug === 'crop-pdf' && newFiles[0].type === 'application/pdf') {
+          loadFirstPageForCropPreview(newFiles[0]);
+        } // image-to-pdf is handled by the general else block below, as it supports multiple files.
       } else {
         setFiles((prev) => [...prev, ...newFiles]);
       }
       setIsCompleted(false);
       setOriginalFileSize(null);
-      setFirstPagePdfFile(null);
+      if (toolSlug !== 'image-to-pdf') setImageToPdfPreviewFile(null);
       setCompressedFileSize(null);
       setCompressedFile(null);
     }
-  }, []);
+  }, [toolSlug, loadFirstPageForCropPreview]);
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       let newFiles = Array.from(e.target.files!);
-      console.log('[ToolWorkspace] input files:', newFiles.map(f => f.name));
-      if (['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf'].includes(toolSlug)) {
+      console.log('[ToolWorkspace] input files:', newFiles.map((f) => f.name));
+
+      if (toolSlug === 'merge-pdf') {
+        const pagesWithLoadingState: MergedPage[] = [];
+        for (const file of newFiles) {
+          if (file.type === 'application/pdf') {
+            // Load with pdf-lib for merging later
+            const pdfDocLib = await PDFDocument.load(await file.arrayBuffer());
+            pdfDocuments.current.set(file, pdfDocLib);
+            // Load with pdfjs-dist for preview generation
+            const pdfDocJs = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+            for (let i = 0; i < pdfDocJs.numPages; i++) {
+              pagesWithLoadingState.push({
+                id: uuidv4(),
+                originalFile: file,
+                originalPageIndex: i,
+                fileName: file.name,
+                previewBlob: null, // Initially null
+                isLoadingPreview: true, // Initially true
+              });
+            }
+          }
+        }
+        // Add all new pages to state immediately with loading indicators
+        setMergedPages((prev) => [...prev, ...pagesWithLoadingState]);
+
+        // Now, asynchronously generate previews and update state
+        pagesWithLoadingState.forEach(async (pageToProcess) => {
+          try {
+            const pdfDocJs = await pdfjsLib.getDocument({ data: await pageToProcess.originalFile.arrayBuffer() }).promise;
+            const pageJs = await pdfDocJs.getPage(pageToProcess.originalPageIndex + 1);
+            const viewport = pageJs.getViewport({ scale: 1 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error("Could not get canvas context");
+
+            const desiredWidth = 64;
+            const scale = desiredWidth / viewport.width;
+            const scaledViewport = pageJs.getViewport({ scale });
+
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+
+            await pageJs.render({ canvas: canvas, canvasContext: context, viewport: scaledViewport }).promise;
+
+            const previewBlob = await new Promise<Blob | null>((resolve) => {
+              canvas.toBlob((blob) => resolve(blob), 'image/png');
+            });
+
+            setMergedPages((prev) =>
+              prev.map((p) =>
+                p.id === pageToProcess.id
+                  ? { ...p, previewBlob: previewBlob, isLoadingPreview: false }
+                  : p
+              )
+            );
+          } catch (error) {
+            console.error(`Error generating preview for page ${pageToProcess.originalPageIndex} of ${pageToProcess.fileName}:`, error);
+            setMergedPages((prev) =>
+              prev.map((p) =>
+                p.id === pageToProcess.id
+                  ? { ...p, isLoadingPreview: false } // Set to false even on error
+                  : p
+              )
+            );
+          }
+        });
+      } else if (['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf'].includes(toolSlug)) {
         setFiles([newFiles[0]]); // Replace with the first new file
-        if (toolSlug === 'crop-pdf') {
+        if (toolSlug === 'crop-pdf' && newFiles[0].type === 'application/pdf') {
           loadFirstPageForCropPreview(newFiles[0]);
         }
       } else {
@@ -399,18 +487,32 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       setIsCompleted(false);
       setOriginalFileSize(null);
       setCompressedFileSize(null);
-      setCompressedFile(null); //
+      setCompressedFile(null);
       setCropX(0); setCropY(0); setCropWidth(0); setCropHeight(0);
       setPreviewRenderedWidth(0); setPreviewRenderedHeight(0);
+      // Clear imageToPdfPreviewFile if not image-to-pdf tool
+      if (toolSlug !== 'image-to-pdf') setImageToPdfPreviewFile(null);
     }
   };
 
   const handleRemoveFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    if (files.length <= 1) {
-      setIsCompleted(false);
+    if (toolSlug === 'merge-pdf') {
+      const pageToRemove = mergedPages[index];
+      if (pageToRemove) {
+        setMergedPages((prev) => prev.filter((_, i) => i !== index));
+        // Check if any other pages from this original file exist in mergedPages
+        const remainingPagesFromSameFile = mergedPages.filter(
+          (p) => p.originalFile === pageToRemove.originalFile && p.id !== pageToRemove.id
+        );
+        if (remainingPagesFromSameFile.length === 0) {
+          pdfDocuments.current.delete(pageToRemove.originalFile);
+        }
+      }
+    } else {
+      setFiles((prev) => prev.filter((_, i) => i !== index));
+    }
+    if ((toolSlug === 'merge-pdf' ? mergedPages.length <= 1 : files.length <= 1)) {
       if (toolSlug === 'crop-pdf') {
-        setFirstPagePdfFile(null);
         setCropX(0);
         setCropY(0);
         setCropWidth(0);
@@ -425,7 +527,8 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     setFiles([]);
     setIsCompleted(false);
     setDownloadUrl(null);
-    setOriginalFileSize(null);
+    setOriginalFileSize(null); // For compress-pdf
+    setMergedPages([]); // For merge-pdf
     setCompressedFileSize(null);
     setCropX(0);
     setCropY(0);
@@ -433,7 +536,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     setCropHeight(0);
     setPreviewRenderedWidth(0);
     setPreviewRenderedHeight(0);
-    setFirstPagePdfFile(null);
+    pdfDocuments.current.clear(); // Clear cached PDF documents
     setCompressedFile(null);
     setPageRange('');
     setProgress(0);
@@ -442,18 +545,24 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     setPageOrientation('portrait');
     setPageSize('fit');
     setMargin('none');
-    setImageToPdfPreviewFile(null);
+    setImageToPdfPreviewFile(null); // For image-to-pdf
   };
 
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
     if (!over) return;
     if (active.id !== over.id) {
-      setFiles((items) => {
-        const oldIndex = items.findIndex((f) => `${f.name}-${f.lastModified}-${f.size}` === active.id);
-        const newIndex = items.findIndex((f) => `${f.name}-${f.lastModified}-${f.size}` === over.id);
-        return arrayMove(items, oldIndex, newIndex);
-      });
+      if (toolSlug === 'merge-pdf') {
+        const oldIndex = mergedPages.findIndex((page) => page.id === active.id);
+        const newIndex = mergedPages.findIndex((page) => page.id === over.id);
+        setMergedPages(arrayMove(mergedPages, oldIndex, newIndex));
+      } else {
+        setFiles((items) => {
+          const oldIndex = items.findIndex((f) => `${f.name}-${f.lastModified}-${f.size}` === active.id);
+          const newIndex = items.findIndex((f) => `${f.name}-${f.lastModified}-${f.size}` === over.id);
+          return arrayMove(items, oldIndex, newIndex);
+        });
+      }
     }
   };
 
@@ -489,31 +598,26 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     return 'application/pdf';
   };
   const handleProcess = async () => {
-    if (files.length === 0) return;
+    if (files.length === 0 && toolSlug !== 'merge-pdf') return; // General check for tools using 'files'
+    if (mergedPages.length === 0 && toolSlug === 'merge-pdf') return; // Specific check for merge-pdf
+
     setIsProcessing(true);
     setProgress(0);
-    console.log('[ToolWorkspace] start processing', files.map(f => f.name));
+    console.log('[ToolWorkspace] start processing', toolSlug === 'merge-pdf' ? `${mergedPages.length} pages` : files.map(f => f.name));
 
     try {
       if (toolSlug === 'merge-pdf') {
+        if (mergedPages.length === 0) return;
+
         const mergedPdf = await PDFDocument.create();
-        // This assumes you have switched to a `pages` state array as described above.
-        // For this example, we will stick with the `files` array to provide a runnable diff.
-        for (const file of files) {
-          const pdfBytes = await file.arrayBuffer();
-          const pdf = await PDFDocument.load(pdfBytes);
-          const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-          copiedPages.forEach((page) => {
-            mergedPdf.addPage(page);
-          });
-          // To implement page reordering, you would iterate through your 'pages' state array:
-          /*
-          for (const pageObj of pages) {
-            const sourcePdf = await PDFDocument.load(pageObj.pdfBytes);
-            const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [pageObj.pageIndex]);
-            mergedPdf.addPage(copiedPage);
-          }
-          */
+        let processedCount = 0;
+        for (const pageToMerge of mergedPages) {
+          const sourcePdf = pdfDocuments.current.get(pageToMerge.originalFile);
+          if (!sourcePdf) continue; // Should not happen if pdfDocuments is correctly managed
+          const [copiedPage] = await mergedPdf.copyPages(sourcePdf, [pageToMerge.originalPageIndex]);
+          mergedPdf.addPage(copiedPage);
+          processedCount++;
+          setProgress(Math.round((processedCount / mergedPages.length) * 100));
         }
 
         const mergedPdfBytes = await mergedPdf.save();
@@ -879,9 +983,9 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       <div className="w-full max-w-5xl">
       
         {/* Main Pitch Black Card Container */}
-        <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-4 sm:p-8 shadow-sm dark:shadow-none border border-slate-200/80 dark:border-zinc-800 transition-colors">
+        <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-4 sm:p-8 shadow-sm dark:shadow-none border border-slate-200/80 dark:border-zinc-800 transition-colors"> 
           
-          {files.length === 0 ? (
+          {!hasFilesOrPages ? (
             /* Upload Dropzone */
             <div
               onDragOver={handleDragOver}
@@ -1031,23 +1135,29 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
             /* Selected File State */
             <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-6 sm:p-10 bg-white dark:bg-zinc-950 space-y-6">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-4">
-                <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                  Selected Files ({files.length})
+                <h3 className="font-bold text-slate-900 dark:text-white text-base"> 
+                  Selected Files ({toolSlug === 'merge-pdf' ? mergedPages.length : files.length})
                 </h3>
                 <button onClick={handleClearAll} className="text-xs font-semibold text-[#E5252A] hover:underline">
                   Clear all
                 </button>
               </div>
-
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={files.map((f, i) => `${f.name}-${i}`)} strategy={verticalListSortingStrategy}>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
-                    {files.map((file, idx) => (
-                      <SortableFileItem key={`${file.name}-${idx}`} file={file} idx={idx} />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
+              
+              {toolSlug === 'merge-pdf' ? (
+                <PdfMergeEditor
+                  pages={mergedPages}
+                  onReorder={handleMergedPageReorder}
+                  onRemovePage={(id) => setMergedPages((prev) => prev.filter((page) => page.id !== id))}
+                />
+              ) : (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={files.map((f, i) => `${f.name}-${i}`)} strategy={verticalListSortingStrategy}>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1"> 
+                      {files.map((file, idx) => (<SortableFileItem key={`${file.name}-${idx}`} file={file} idx={idx} onRemove={handleRemoveFile} />))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              )}
 
               {toolSlug === 'crop-pdf' && files.length > 0 && (
                 <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 w-full">
@@ -1241,15 +1351,15 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                     {/* PDF Preview */}
                     {imageToPdfPreviewFile && !isGeneratingPreview && (
                       <div className="space-y-2 border-t border-slate-200 dark:border-zinc-600 pt-4 mt-4">
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300"> // Keep this line as it's part of the selection
                           Preview
                           {/* Add a visual indicator for changes if needed for debugging */}
-                          {/* <span className="ml-2 text-red-500">{Math.random().toFixed(2)}</span> */}
+                          {/* <span className="ml-2 text-red-500">{Math.random().toFixed(2)}</span> */} 
                         </label>
                         <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg p-3 max-h-[400px] overflow-y-auto flex flex-col items-center justify-center min-h-[200px]">
-                          <PdfPreviewCanvas
+                          <PdfPreview
                             key={imageToPdfPreviewFile.size + '-' + pageOrientation + '-' + pageSize + '-' + margin} // Force re-mount on relevant changes
-                            file={imageToPdfPreviewFile}
+                            file={imageToPdfPreviewFile} // Keep this line as it's part of the selection
                             desiredWidth={250}
                             className="rounded-md shadow-sm"
                           />
@@ -1283,7 +1393,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                 <label className="cursor-pointer text-xs font-semibold text-slate-600 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 px-5 py-3 rounded-full transition-colors w-full sm:w-auto text-center">
                   + Add more files
                   <input type="file" multiple accept={getAcceptableFileTypes(toolSlug)} onChange={handleFileInput} className="hidden" />
-                </label>
+                </label> {/* This button is for adding files to the general 'files' state or for merge-pdf */}
 
                 <button
                   onClick={handleProcess}
@@ -1291,7 +1401,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                   className="w-full sm:w-auto px-10 py-3.5 bg-[#E5252A] hover:bg-[#C51920] disabled:bg-slate-400 text-white font-bold text-sm rounded-full shadow-md transition-all flex items-center justify-center space-x-2"
                 >
                   {isProcessing ? (
-                    <span>Processing...</span>
+                    <span>Processing... <Spinner className="w-4 h-4" /></span>
                   ) : <span>Process</span>}
                 </button>
               </div>

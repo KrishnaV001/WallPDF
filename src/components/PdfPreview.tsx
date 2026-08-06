@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import PdfJsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import PdfJsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 // Set the worker source for pdf.js. This is the most reliable way to avoid bundling issues with Vite.
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfJsWorker;

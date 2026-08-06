@@ -43,15 +43,15 @@ export const ThemeToggle: React.FC = () => {
       role="switch"
       aria-checked={isDark}
       aria-label="Toggle dark mode"
-      className={`relative inline-flex h-10 w-20 shrink-0 cursor-pointer items-center rounded-full p-1 transition-colors duration-300 focus:outline-none ${
+      className={`relative inline-flex h-10 w-20  shrink-0 cursor-pointer items-center rounded-full p-1 transition-colors duration-300 focus:outline-none ${
         isDark ? 'bg-[#080b11]' : 'bg-[#f1f5f9]'
       }`}
     >
       {/* Sliding Highlight Capsule */}
       <span
-        className={`absolute h-8 w-9 rounded-full transition-transform duration-300 ease-out shadow-sm ${
+        className={`absolute ml-[1.5px]  h-8 w-9 rounded-full transition-transform duration-300 ease-out shadow-sm ${
           isDark
-            ? 'translate-x-9 bg-[#242e42]'
+            ? 'translate-x-8 bg-[#242e42]'
             : 'translate-x-0 bg-[#e2e8f0]'
         }`}
       />

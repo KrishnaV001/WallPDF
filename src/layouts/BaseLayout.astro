@@ -17,6 +17,12 @@ const { title, description } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
     
     <!-- Inline Theme Initializer -->
     <script is:inline>
@@ -34,7 +40,7 @@ const { title, description } = Astro.props;
       })();
     </script>
   </head>
-  <body class="bg-[#F8FAFC] dark:bg-black text-slate-900 dark:text-white min-h-screen flex flex-col antialiased transition-colors duration-200">
+  <body class="bg-[#F8FAFC] dark:bg-black text-slate-900 dark:text-white min-h-screen flex flex-col antialiased transition-colors duration-200 overflow-x-hidden font-sans">
     
     <!-- Render Header with client:only to guarantee React interactivity -->
     <Header client:only="react" />
