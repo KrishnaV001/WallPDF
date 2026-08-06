@@ -16,6 +16,7 @@
     "astro": "^7.2.0",
     "clsx": "^2.1.1",
     "comlink": "^4.4.1",
+    "common-ancestor-path": "^2.0.0",
     "firebase": "^12.16.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.470.0",

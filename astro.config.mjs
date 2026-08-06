@@ -3,6 +3,11 @@ import react from '@astrojs/react';
 import tailwind from '@astrojs/tailwind';
 
 export default defineConfig({
+  vite: {
+    optimizeDeps: {
+      include: ['common-ancestor-path']
+    }
+  },
   integrations: [
     react(),
     tailwind({
