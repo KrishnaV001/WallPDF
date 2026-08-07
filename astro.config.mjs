@@ -1,14 +1,13 @@
+
 import { defineConfig } from 'astro/config';
 import react from '@astrojs/react';
-import tailwindv4 from '@tailwindcss/vite';
+import tailwind from '@astrojs/tailwind';
 
 export default defineConfig({
   integrations: [
-    react()
+    react(),
+    tailwind({
+      applyBaseStyles: true,
+    }),
   ],
-  vite: {
-    plugins: [
-      tailwindv4() // Natively highlights and injects styles inside Vite v8
-    ]
-  }
 });
