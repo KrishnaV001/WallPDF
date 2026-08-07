@@ -99,7 +99,9 @@ export const Header: React.FC = () => {
 
       {/* Auth Modal */}
       <AuthModal
-        {...({ isOpen: isAuthOpen, mode: authMode, onClose: () => setIsAuthOpen(false) } as any)}
+        isOpen={isAuthOpen}
+        initialMode={authMode}
+        onClose={() => setIsAuthOpen(false)}
       />
     </>
   );
