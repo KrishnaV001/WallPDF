@@ -1,6 +1,6 @@
 ---
 import '../styles/global.css';
-import { Header } from '../components/Header';
+import { ClientApp } from '../components/ClientApp';
 
 interface Props {
   title: string;
@@ -44,7 +44,7 @@ const { title, description } = Astro.props;
   <body class="bg-[#F8FAFC] dark:bg-black text-slate-900 dark:text-white min-h-screen flex flex-col antialiased transition-colors duration-200 overflow-x-hidden font-sans">
     
     <!-- Render Header with client:only to guarantee React interactivity -->
-    <Header client:only="react" />
+    <ClientApp client:only="react" />
 
     <main class="flex-grow bg-[#F8FAFC] dark:bg-black">
       <slot />

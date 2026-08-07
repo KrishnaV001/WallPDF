@@ -1,5 +1,5 @@
-import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { initializeApp, getApp, getApps, type FirebaseApp } from 'firebase/app';
+import { getAuth, type Auth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,10 +11,23 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+let app: FirebaseApp;
+try {
+  app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+} catch (e) {
+  console.error('Firebase initialization error', e);
+  // @ts-ignore
+  app = null;
+}
 
-// Initialize Firebase Authentication and get a reference to the service
-export const auth = getAuth(app);
 
+let auth: Auth | null;
+try {
+  auth = app ? getAuth(app) : null;
+} catch (e) {
+  console.error('Firebase auth initialization error', e);
+  auth = null;
+}
+
+export { auth };
 export default app;

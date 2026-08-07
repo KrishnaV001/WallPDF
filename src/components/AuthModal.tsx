@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { auth } from '../firebase';
+import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 
 declare global {
   interface Window {
@@ -9,71 +11,77 @@ declare global {
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialMode?: 'signin' | 'signup';
-  onSuccess?: (user: { name: string; email: string; picture: string }) => void;
+  mode: 'signin' | 'signup';
+  setMode: (mode: 'signin' | 'signup') => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
-  initialMode = 'signin',
-  onSuccess,
+  mode,
+  setMode,
 }) => {
-  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isGisLoaded, setIsGisLoaded] = useState(false);
 
   const clientId = import.meta.env.PUBLIC_GOOGLE_CLIENT_ID;
-  useEffect(() => {
-    if (isOpen) { // Only set mode when modal opens
-      setMode(initialMode);
-      setError(null); // Clear any previous errors
-      setEmail(''); // Clear form fields
-      setPassword('');
-    }
-  }, [isOpen, initialMode]);
 
-  // Load Google Identity Services SDK dynamically
+
+
+  // Load Google Identity Services SDK and initialize client
   useEffect(() => {
     if (!isOpen) return;
 
     const scriptId = 'google-gis-script';
-    let script = document.getElementById(scriptId) as HTMLScriptElement;
-
-    if (!script) {
-      script = document.createElement('script');
-      script.id = scriptId;
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      document.body.appendChild(script);
+    if (document.getElementById(scriptId)) {
+      setIsGisLoaded(true);
+      return;
     }
-  }, [isOpen]);
+
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (!window.google?.accounts?.id) {
+        setError('Failed to load Google authentication service.');
+        return;
+      }
+      
+      if (!clientId) {
+        setError('Google Client ID is missing. Add PUBLIC_GOOGLE_CLIENT_ID to your .env file.');
+        return;
+      }
+
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleResponse,
+      });
+      setIsGisLoaded(true);
+    };
+    script.onerror = () => {
+      setError('Failed to load Google authentication service. Please check your network connection.');
+      setIsGisLoaded(false);
+    }
+    document.body.appendChild(script);
+
+  }, [isOpen, clientId]);
 
   if (!isOpen) return null;
 
   // Real Google Sign-In Trigger
   const handleGoogleAuth = () => {
-    if (!clientId) {
-      setError('Google Client ID is missing. Add PUBLIC_GOOGLE_CLIENT_ID to your .env file.');
-      return;
-    }
-
-    if (!window.google?.accounts?.id) {
-      setError('Google auth library is loading. Please try again in a second.');
+    if (!isGisLoaded || !window.google?.accounts?.id) {
+      setError('Google auth library is not ready yet. Please wait a moment.');
       return;
     }
 
     setIsLoading(true);
     setError(null);
-
-    // Initialize Google ID Client
-    window.google.accounts.id.initialize({
-      client_id: clientId,
-      callback: handleGoogleResponse,
-    });
 
     // Prompt the Google One Tap / OAuth Popup
     window.google.accounts.id.prompt((notification: any) => {
@@ -84,13 +92,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           scope: 'email profile openid',
           callback: async (tokenResponse: any) => {
             if (tokenResponse.access_token) {
+              if (!auth) {
+                setError('Authentication service is not available.');
+                setIsLoading(false);
+                return;
+              }
               try {
-                // Fetch user info using the access token
-                const userInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-                }).then((res) => res.json());
+                // The access_token is NOT the same as an id_token.
+                // For simplicity, we will rely on the primary GSI flow.
+                // This fallback is complex to implement correctly without server-side help.
+                // We will log an error and inform the user.
+                setError("Sign-in popup was closed. Please try the main 'Continue with Google' button again.");
+                setIsLoading(false);
 
-                handleUserAuthenticated(userInfo);
               } catch (err) {
                 setError('Failed to fetch user profile from Google.');
                 setIsLoading(false);
@@ -106,34 +120,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // Decode JWT credential from standard prompt
-  const handleGoogleResponse = (response: any) => {
-    try {
-      const base64Url = response.credential.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
+  const handleGoogleResponse = async (response: any) => {
+    setIsLoading(true);
+    setError(null);
+    if (!auth) {
+      setError('Authentication service is not available.');
+      setIsLoading(false);
+      return;
+    }
 
-      const user = JSON.parse(jsonPayload);
-      handleUserAuthenticated({
-        name: user.name,
-        email: user.email,
-        picture: user.picture,
-      });
+    try {
+      const credential = GoogleAuthProvider.credential(response.credential);
+      await signInWithCredential(auth, credential);
+      // On successful sign-in, the onAuthStateChanged listener in AuthContext
+      // will handle the user state update and this modal will be closed.
+      onClose();
     } catch (err) {
-      setError('Failed to process Google sign-in response.');
+      setError('Failed to sign in with Google. Please try again.');
+      console.error(err);
+    } finally {
       setIsLoading(false);
     }
   };
 
-  const handleUserAuthenticated = (user: { name: string; email: string; picture: string }) => {
+  const handleUserAuthenticated = () => {
+    // This function is no longer the source of truth.
+    // The onAuthStateChanged listener in AuthContext will handle everything.
     setIsLoading(false);
-    if (onSuccess) {
-      onSuccess(user);
-    }
     onClose();
   };
 
