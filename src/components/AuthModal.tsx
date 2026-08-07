@@ -27,8 +27,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const clientId = import.meta.env.PUBLIC_GOOGLE_CLIENT_ID;
   useEffect(() => {
-    setMode(initialMode);
-  }, [initialMode]);
+    if (isOpen) { // Only set mode when modal opens
+      setMode(initialMode);
+      setError(null); // Clear any previous errors
+      setEmail(''); // Clear form fields
+      setPassword('');
+    }
+  }, [isOpen, initialMode]);
 
   // Load Google Identity Services SDK dynamically
   useEffect(() => {
