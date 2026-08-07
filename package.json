@@ -8,12 +8,12 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@astrojs/react": "^4.1.0",
-    "@astrojs/tailwind": "^5.1.0",
+    "@astrojs/react": "^6.0.2",
+    "@astrojs/tailwind": "^6.0.2",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@vitejs/plugin-react": "^6.0.4",
-    "astro": "^5.0.0",
+    "astro": "^7.2.0",
     "clsx": "^2.1.1",
     "comlink": "^4.4.1",
     "firebase": "^12.16.0",
@@ -24,9 +24,12 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.5.5",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
+    "@shikijs/core": "^4.4.2",
+    "@shikijs/vscode-textmate": "^10.0.2",
     "@types/jszip": "^3.4.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
