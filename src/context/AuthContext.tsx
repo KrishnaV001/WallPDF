@@ -6,54 +6,41 @@ interface User {
   uid: string;
   name: string;
   email: string;
-  picture: string;
+  picture: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'wallpdf_cached_user';
-
-const getCachedUser = (): User | null => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-};
+const mapFirebaseUser = (firebaseUser: FirebaseUser): User => ({
+  uid: firebaseUser.uid,
+  name: firebaseUser.displayName || 'Anonymous',
+  email: firebaseUser.email || '',
+  picture: firebaseUser.photoURL || null,
+});
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Seed initial state from cache so there's no logged-out flash on refresh
-  const [user, setUser] = useState<User | null>(() => getCachedUser());
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!auth) {
       setUser(null);
-      localStorage.removeItem(STORAGE_KEY);
       setLoading(false);
       return;
     }
+    // Firebase is the single source of truth for auth state.
+    // onAuthStateChanged fires on mount with the current session (restored
+    // from Firebase's own persisted storage) and on every subsequent
+    // sign-in/sign-out.
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
-      if (firebaseUser) {
-        const mapped: User = {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || 'Anonymous',
-          email: firebaseUser.email || '',
-          picture: firebaseUser.photoURL || `https://avatar.vercel.sh/${firebaseUser.uid}.png`,
-        };
-        setUser(mapped);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
-      } else {
-        setUser(null);
-        localStorage.removeItem(STORAGE_KEY);
-      }
+      setUser(firebaseUser ? mapFirebaseUser(firebaseUser) : null);
       setLoading(false);
     });
 
@@ -64,13 +51,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!auth) return;
     try {
       await signOut(auth);
-      localStorage.removeItem(STORAGE_KEY);
+      // onAuthStateChanged will fire and set user to null.
     } catch (error) {
       console.error("Error signing out: ", error);
     }
   };
 
-  const value = { user, loading, logout };
+  // Profile edits (e.g. updateProfile after signup) don't trigger
+  // onAuthStateChanged, so callers can invoke this to re-sync context
+  // state from the latest auth.currentUser.
+  const refreshUser = async () => {
+    if (!auth?.currentUser) return;
+    await auth.currentUser.reload();
+    if (auth.currentUser) {
+      setUser(mapFirebaseUser(auth.currentUser));
+    }
+  };
+
+  const value = { user, loading, logout, refreshUser };
 
   return (
     <AuthContext.Provider value={value}>

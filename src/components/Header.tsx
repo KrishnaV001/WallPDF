@@ -3,6 +3,18 @@ import { ThemeToggle } from './ThemeToggle';
 import { AuthModal } from './AuthModal';
 import { useAuth } from '../context/AuthContext'
 
+const ProfileAvatar: React.FC<{ name: string; className?: string }> = ({ name, className }) => {
+  const initial = name?.trim()?.charAt(0)?.toUpperCase() || '?';
+  return (
+    <div
+      className={`flex items-center justify-center rounded-full bg-[#E5252A] text-white font-semibold select-none ${className ?? ''}`}
+      aria-hidden="true"
+    >
+      {initial}
+    </div>
+  );
+};
+
 export const Header: React.FC = () => {
   const { user, logout, loading } = useAuth();
   console.log('Header: Render with user:', user);
@@ -56,7 +68,7 @@ export const Header: React.FC = () => {
           <a href="/" className="flex items-center space-x-2.5 group shrink-0">
             <img src="/wallpdf-logo(1).svg"
               alt="WallPDF"
-              className="w-12 h-12 group-hover:scale-105 transition-transform"/>
+              className=" w-10 h-10 sm:w-12 sm:h-12 group-hover:scale-105 transition-transform"/>
               <span className="font-extrabold text-xl text-slate-900 dark:text-white tracking-tight">
                WallPDF
               </span>
@@ -74,11 +86,7 @@ export const Header: React.FC = () => {
                     className="block rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-black focus:ring-red-500"
                   >
                     <span className="sr-only">Open user menu</span>
-                    <img
-                      className="h-8 w-8 rounded-full"
-                      src={user.picture}
-                      alt={user.name}
-                    />
+                    <ProfileAvatar name={user.name} className="h-8 w-8 text-sm" />
                   </button>
                   {isProfileMenuOpen && (
                     <div className="absolute right-0 mt-2 w-56 origin-top-right bg-white dark:bg-zinc-900 rounded-xl shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none text-sm">
@@ -126,11 +134,7 @@ export const Header: React.FC = () => {
                     className="block rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-black focus:ring-red-500"
                   >
                     <span className="sr-only">Open user menu</span>
-                    <img
-                      className="h-8 w-8 rounded-full"
-                      src={user.picture}
-                      alt={user.name}
-                    />
+                    <ProfileAvatar name={user.name} className="h-8 w-8 text-sm" />
                   </button>
                   {isProfileMenuOpen && (
                     <div className="absolute right-0 mt-2 w-56 origin-top-right bg-white dark:bg-zinc-900 rounded-xl shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none text-sm">

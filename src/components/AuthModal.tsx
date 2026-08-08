@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { auth } from '../firebase';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { useAuth } from '../context/AuthContext';
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+} from 'firebase/auth';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -15,6 +22,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   mode,
   setMode,
 }) => {
+  const { refreshUser } = useAuth();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -43,13 +52,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }
 };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth) {
+      setError('Authentication service is not available.');
+      return;
+    }
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    setError(null);
+    try {
+      if (mode === 'signup') {
+        const credential = await createUserWithEmailAndPassword(auth, email, password);
+        if (name.trim()) {
+          await updateProfile(credential.user, { displayName: name.trim() });
+          await refreshUser();
+        }
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
       onClose();
-    }, 600);
+    } catch (err: any) {
+      switch (err.code) {
+        case 'auth/email-already-in-use':
+          setError('An account with this email already exists.');
+          break;
+        case 'auth/invalid-email':
+          setError('Please enter a valid email address.');
+          break;
+        case 'auth/weak-password':
+          setError('Password should be at least 6 characters long.');
+          break;
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+          setError('Invalid credentials. Please check your email and password.');
+          break;
+        case 'auth/operation-not-allowed':
+          setError('Email/password sign-in is not enabled for this app yet.');
+          break;
+        case 'auth/too-many-requests':
+          setError('Too many attempts. Please wait a moment and try again.');
+          break;
+        case 'auth/network-request-failed':
+          setError('Network error. Please check your connection and try again.');
+          break;
+        default:
+          setError('An unexpected error occurred. Please try again.');
+          console.error(err);
+          break;
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -135,6 +189,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Form Inputs */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'signup' && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Full name
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Jane Doe"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+              />
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Email address
