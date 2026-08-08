@@ -9,12 +9,16 @@ export const Header: React.FC = () => {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const desktopMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   // Close profile menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenu.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const clickedOutsideDesktop = !desktopMenuRef.current || !desktopMenuRef.current.contains(target);
+      const clickedOutsideMobile = !mobileMenuRef.current || !mobileMenuRef.current.contains(target);
+      if (clickedOutsideDesktop && clickedOutsideMobile) {
         setProfileMenuOpen(false);
       }
     };
@@ -50,12 +54,12 @@ export const Header: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           
           <a href="/" className="flex items-center space-x-2.5 group shrink-0">
-            <div className="w-9 h-9 rounded-lg bg-[#E5252A] flex items-center justify-center text-white font-black text-sm shadow-sm group-hover:scale-105 transition-transform">
-              W
-            </div>
-            <span className="font-extrabold text-xl text-slate-900 dark:text-white tracking-tight">
-              WallPDF
-            </span>
+            <img src="/wallpdf-logo(1).svg"
+              alt="WallPDF"
+              className="w-12 h-12 group-hover:scale-105 transition-transform"/>
+              <span className="font-extrabold text-xl text-slate-900 dark:text-white tracking-tight">
+               WallPDF
+              </span>
           </a>
 
           <div className="flex items-center gap-2 sm:gap-4">
@@ -64,7 +68,7 @@ export const Header: React.FC = () => {
             {/* Desktop: Profile Dropdown or Sign-in Buttons */}
             <div className="hidden md:flex items-center gap-2">
               {user ? (
-                <div className="relative" ref={profileMenuRef}>
+                <div className="relative" ref={desktopMenuRef}>
                   <button
                     onClick={() => setProfileMenuOpen(!isProfileMenuOpen)}
                     className="block rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-black focus:ring-red-500"
@@ -116,7 +120,7 @@ export const Header: React.FC = () => {
             {/* Mobile: Profile Icon or Generic Icon */}
             <div className="md:hidden">
               {user ? (
-                <div className="relative" ref={profileMenuRef}>
+                <div className="relative" ref={mobileMenuRef}>
                   <button
                     onClick={() => setProfileMenuOpen(!isProfileMenuOpen)}
                     className="block rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-black focus:ring-red-500"

@@ -17,26 +17,42 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const STORAGE_KEY = 'wallpdf_cached_user';
+
+const getCachedUser = (): User | null => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  // Seed initial state from cache so there's no logged-out flash on refresh
+  const [user, setUser] = useState<User | null>(() => getCachedUser());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!auth) {
       setUser(null);
+      localStorage.removeItem(STORAGE_KEY);
       setLoading(false);
       return;
     }
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        setUser({
+        const mapped: User = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || 'Anonymous',
           email: firebaseUser.email || '',
           picture: firebaseUser.photoURL || `https://avatar.vercel.sh/${firebaseUser.uid}.png`,
-        });
+        };
+        setUser(mapped);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
       } else {
         setUser(null);
+        localStorage.removeItem(STORAGE_KEY);
       }
       setLoading(false);
     });
@@ -48,7 +64,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!auth) return;
     try {
       await signOut(auth);
-      // The onAuthStateChanged listener will handle setting the user to null.
+      localStorage.removeItem(STORAGE_KEY);
     } catch (error) {
       console.error("Error signing out: ", error);
     }

@@ -73,9 +73,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Header */}
         <div className="text-center mb-6">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 to-red-600 flex items-center justify-center font-black text-white text-xl mx-auto mb-3 shadow-md shadow-rose-500/20">
-            W
-          </div>
+          <img
+            src="/wallpdf-logo(1).svg"
+            alt="WallPDF Logo"
+            className="w-10 h-10 mx-auto mb-3"
+          />
           <h2 className="text-2xl font-bold text-slate-900">
             {mode === 'signin' ? 'Welcome back' : 'Create an account'}
           </h2>
