@@ -14,7 +14,7 @@ export const Header: React.FC = () => {
   // Close profile menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+      if (profileMenuRef.current && !profileMenu.current.contains(event.target as Node)) {
         setProfileMenuOpen(false);
       }
     };
@@ -37,6 +37,11 @@ export const Header: React.FC = () => {
   const openAuthModalFromMobile = () => {
     setAuthMode('signup');
     setIsAuthOpen(true);
+  };
+
+  const handleLogout = () => {
+    setProfileMenuOpen(false);
+    logout();
   };
 
   return (
@@ -79,7 +84,7 @@ export const Header: React.FC = () => {
                           <p className="text-slate-500 dark:text-zinc-400 truncate" title={user.email}>{user.email}</p>
                         </div>
                         <button
-                          onClick={logout}
+                          onClick={handleLogout}
                           className="block w-full text-left px-4 py-2 text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800"
                         >
                           Sign out
@@ -131,7 +136,7 @@ export const Header: React.FC = () => {
                           <p className="text-slate-500 dark:text-zinc-400 truncate" title={user.email}>{user.email}</p>
                         </div>
                         <button
-                          onClick={logout}
+                          onClick={handleLogout}
                           className="block w-full text-left px-4 py-2 text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800"
                         >
                           Sign out
