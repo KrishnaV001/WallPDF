@@ -3,8 +3,22 @@ import { ThemeToggle } from './ThemeToggle';
 import { AuthModal } from './AuthModal';
 import { useAuth } from '../context/AuthContext'
 
-const ProfileAvatar: React.FC<{ name: string; className?: string }> = ({ name, className }) => {
+const ProfileAvatar: React.FC<{ name: string; picture?: string | null; className?: string }> = ({ name, picture, className }) => {
   const initial = name?.trim()?.charAt(0)?.toUpperCase() || '?';
+  const [imgFailed, setImgFailed] = useState(false);
+
+  if (picture && !imgFailed) {
+    return (
+      <img
+        src={picture}
+        alt={name || 'Profile'}
+        referrerPolicy="no-referrer"
+        onError={() => setImgFailed(true)}
+        className={`rounded-full object-cover select-none ${className ?? ''}`}
+      />
+    );
+  }
+
   return (
     <div
       className={`flex items-center justify-center rounded-full bg-[#E5252A] text-white font-semibold select-none ${className ?? ''}`}
@@ -17,7 +31,6 @@ const ProfileAvatar: React.FC<{ name: string; className?: string }> = ({ name, c
 
 export const Header: React.FC = () => {
   const { user, logout, loading } = useAuth();
-  console.log('Header: Render with user:', user);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -86,7 +99,7 @@ export const Header: React.FC = () => {
                     className="block rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-black focus:ring-red-500"
                   >
                     <span className="sr-only">Open user menu</span>
-                    <ProfileAvatar name={user.name} className="h-8 w-8 text-sm" />
+                    <ProfileAvatar name={user.name} picture={user.picture} className="h-8 w-8 text-sm" />
                   </button>
                   {isProfileMenuOpen && (
                     <div className="absolute right-0 mt-2 w-56 origin-top-right bg-white dark:bg-zinc-900 rounded-xl shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none text-sm">
@@ -134,7 +147,7 @@ export const Header: React.FC = () => {
                     className="block rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-black focus:ring-red-500"
                   >
                     <span className="sr-only">Open user menu</span>
-                    <ProfileAvatar name={user.name} className="h-8 w-8 text-sm" />
+                    <ProfileAvatar name={user.name} picture={user.picture} className="h-8 w-8 text-sm" />
                   </button>
                   {isProfileMenuOpen && (
                     <div className="absolute right-0 mt-2 w-56 origin-top-right bg-white dark:bg-zinc-900 rounded-xl shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none text-sm">
