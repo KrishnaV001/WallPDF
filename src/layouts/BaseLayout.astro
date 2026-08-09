@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import { ClientApp } from '../components/ClientApp';
+import '../../fonts.css';
 
 interface Props {
   title: string;
@@ -18,12 +19,6 @@ const { title, description } = Astro.props;
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href="/wallpdf-logo(1).svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
     
     <!-- Inline Theme Initializer -->
     <script is:inline>
@@ -41,16 +36,16 @@ const { title, description } = Astro.props;
       })();
     </script>
   </head>
-  <body class="bg-[#F8FAFC] dark:bg-black text-slate-900 dark:text-white min-h-screen flex flex-col antialiased transition-colors duration-200 overflow-x-hidden font-sans">
+  <body class="text-slate-900 dark:text-white min-h-screen flex flex-col antialiased transition-colors duration-200 overflow-x-hidden font-sans">
     
     <!-- Render Header with client:only to guarantee React interactivity -->
     <ClientApp client:only="react" />
 
-    <main class="flex-grow bg-[#F8FAFC] dark:bg-black">
+    <main class="flex-grow bg-transparent">
       <slot />
     </main>
 
-    <footer class="border-t border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-black py-6 text-center text-xs text-slate-500 dark:text-zinc-500">
+    <footer class="border-t border-slate-200/10 dark:border-zinc-800/50 bg-white/30 dark:bg-black/30 backdrop-blur-sm py-6 text-center text-xs text-slate-500 dark:text-zinc-400">
       <p>WallPDF — Private client-side PDF utilities. Processed entirely in browser memory.</p>
     </footer>
   </body>

@@ -979,11 +979,11 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-[#F8FAFC] dark:bg-black py-12 px-4 sm:px-6 flex items-center justify-center transition-colors duration-200">
+    <div className="min-h-[calc(100vh-4rem)] bg-transparent py-12 px-4 sm:px-6 flex items-center justify-center transition-colors duration-200">
       <div className="w-full max-w-5xl">
       
         {/* Main Pitch Black Card Container */}
-        <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-4 sm:p-8 shadow-sm dark:shadow-none border border-slate-200/80 dark:border-zinc-800 transition-colors"> 
+        <div className="bg-white/20 dark:bg-zinc-900/30 backdrop-blur-2xl rounded-[32px] p-4 sm:p-8 shadow-sm dark:shadow-none border border-slate-200/80 dark:border-zinc-800 transition-colors"> 
           
           {!hasFilesOrPages ? (
             /* Upload Dropzone */
@@ -994,7 +994,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
               className={`border-2 border-dashed rounded-[24px] p-8 sm:p-16 text-center transition-all duration-200 flex flex-col items-center justify-center ${
                 isDragging
                   ? 'border-[#E5252A] bg-red-50/50 dark:bg-red-950/30 scale-[0.99]'
-                  : 'border-red-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:border-[#E5252A] dark:hover:border-[#E5252A]'
+                  : 'border-red-200 dark:border-zinc-800 bg-white/30 dark:bg-zinc-950/40 hover:border-[#E5252A] dark:hover:border-[#E5252A]'
               }`}
             >
               {/* Header Icon & Title */}
@@ -1061,7 +1061,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
             </div>
           ) : isProcessing ? (
             /* Processing State with Progress Bar */
-            <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-8 sm:p-12 text-center bg-white dark:bg-zinc-950 space-y-6">
+            <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-8 sm:p-12 text-center bg-white/60 dark:bg-zinc-950/70 backdrop-blur-lg space-y-6">
               <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Processing your file...</h3>
               <div className="w-full bg-slate-200 dark:bg-zinc-700 rounded-full h-2.5">
                 <div
@@ -1075,7 +1075,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
             </div>
           ) : isCompleted && downloadUrl ? (
             /* Completed State */
-            <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-8 sm:p-12 text-center bg-white dark:bg-zinc-950 space-y-6">
+            <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-8 sm:p-12 text-center bg-white/60 dark:bg-zinc-950/70 backdrop-blur-lg space-y-6">
               <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-sm">
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
@@ -1119,7 +1119,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
             </div>
           ) : isCompleted && !downloadUrl ? (
             /* Completed State - No Download (e.g. for failed placeholders) */
-            <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-8 sm:p-12 text-center bg-white dark:bg-zinc-950 space-y-6">
+            <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-8 sm:p-12 text-center bg-white/60 dark:bg-zinc-950/70 backdrop-blur-lg space-y-6">
                <div className="space-y-1">
                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Feature Not Available</h3>
                 <p className="text-sm text-slate-500 dark:text-zinc-400">This feature requires a server-side component and is not yet implemented.</p>
@@ -1133,7 +1133,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
             </div>
           ) : (
             /* Selected File State */
-            <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-6 sm:p-10 bg-white dark:bg-zinc-950 space-y-6">
+            <div className="border-2 border-dashed border-red-200 dark:border-zinc-800 rounded-[24px] p-6 sm:p-10 bg-white/60 dark:bg-zinc-950/70 backdrop-blur-lg space-y-6">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-4">
                 <h3 className="font-bold text-slate-900 dark:text-white text-base"> 
                   Selected Files ({toolSlug === 'merge-pdf' ? mergedPages.length : files.length})

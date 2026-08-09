@@ -78,17 +78,17 @@ export const Header: React.FC = () => {
       <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 dark:border-zinc-800 bg-white/80 dark:bg-black/80 backdrop-blur-md transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           
-          <a href="/" className="flex items-center space-x-2.5 group shrink-0">
+          <a href="/" className="flex items-center space-x-2.5 group shrink-">
             <img src="/wallpdf-logo(1).svg"
               alt="WallPDF"
               className=" w-10 h-10 sm:w-12 sm:h-12 group-hover:scale-105 transition-transform"/>
-              <span className="font-extrabold text-xl text-slate-900 dark:text-white tracking-tight">
+              <span className="font-bol text-2xl text-slate-900 dark:text-white">
                WallPDF
               </span>
           </a>
 
-          <div className="flex items-center gap-2 sm:gap-4">
-            <ThemeToggle />
+          <div className="flex items-center gap-1 sm:gap-4">
+            <div className='scale-[0.95] sm:scale-100 '><ThemeToggle /></div>
 
             {/* Desktop: Profile Dropdown or Sign-in Buttons */}
             <div className="hidden md:flex items-center gap-2">
@@ -173,7 +173,7 @@ export const Header: React.FC = () => {
                   className="p-1 rounded-md text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800"
                 >
                   <span className="sr-only">Open user menu</span>
-                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <svg className="h-8 w-8 bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-zinc-200 rounded-full p-1 " viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                      <circle cx="12" cy="7" r="4"></circle>
                   </svg>

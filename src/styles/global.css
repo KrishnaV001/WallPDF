@@ -1,3 +1,33 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    position: relative;
+    background-image: url('/ChatGPT Image Aug 9, 2026, 03_55_32 PM.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  /* This pseudo-element will act as the overlay */
+  body::before {
+    content: '';
+    position: fixed; /* Use fixed to cover the whole viewport */
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: black;
+    opacity: 0; /* Hidden by default */
+    transition: opacity 0.3s ease-in-out;
+    pointer-events: none; /* Make sure it doesn't interfere with clicks */
+    z-index: -1; /* Place it behind all content */
+  }
+
+  .dark body::before {
+    opacity: 0.9; /* Visible in dark mode */
+  }
+}
