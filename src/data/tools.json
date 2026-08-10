@@ -94,5 +94,13 @@
   "description": "Visually select the area to keep and crop your PDF pages to a new, smaller size.",
   "category": "Edit PDF",
   "color": "purple"
-  } 
+  },
+  {
+    "slug": "pdf-to-images",
+    "title": "Convert PDF to Images - WallPDF",
+    "h1": "PDF to Images",
+    "description": "Extract each PDF page into high-quality JPG or PNG images.",
+    "category": "Convert PDF",
+    "color": "purple"
+  }
 ]

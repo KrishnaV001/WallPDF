@@ -55,7 +55,7 @@ export const ToolGrid: React.FC = () => {
         {/* Header */}
         <div className="text-center space-y-3 mx-auto">
           <h1 className="text-4xl sm:text-[2.6rem] font-bold  text-gray-850 dark:text-white transition-colors">
-            Your complete toolkit for any <span className='text-[#E5252A] dark:text-[#E5252A]'>PDFs</span> task, all in one place
+            Your complete toolkit for any <span className='text-[#E5252A] dark:text-[#E5252A]'>PDFs</span> work, all in one place
           </h1>
           <p className="text-base leading-snug sm:text-xl text-slate-600 dark:text-zinc-400 max-w-4xl mx-auto font-light transition-colors">
             Your complete toolkit to easily convert, shrink, split, rotate, and watermark documents in a few clicks with 100% private, local processing.

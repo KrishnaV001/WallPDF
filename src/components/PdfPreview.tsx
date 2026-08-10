@@ -1,11 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfJsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 // Set the worker source for pdf.js. This is the most reliable way to avoid bundling issues with Vite.
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfJsWorker;
 
-interface PdfPreviewProps {
+interface PdfPreviewProps { // Keep this line as it's part of the selection
   file: File | Blob;
   className?: string;
   desiredWidth?: number;
@@ -14,25 +14,31 @@ interface PdfPreviewProps {
   onRender?: (width: number, height: number, originalWidth?: number, originalHeight?: number, totalPages?: number) => void;
 }
 
-export const PdfPreview: React.FC<PdfPreviewProps> = ({ file, className, desiredWidth, scale: propScale, pageNumber = 1, onRender }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+export const PdfPreview: React.FC<PdfPreviewProps> = ({ file, className, desiredWidth, scale: propScale, pageNumber, onRender }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const renderTaskRef = useRef<any>(null);
   const pdfDocRef = useRef<any>(null);
   const onRenderRef = useRef(onRender);
+  const [totalPages, setTotalPages] = useState(0);
+  const [isRendering, setIsRendering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     onRenderRef.current = onRender;
   }, [onRender]);
 
   useEffect(() => {
-    if (!file || !canvasRef.current) return;
-
+    if (!file || !containerRef.current) return;
+    
     let isSubscribed = true;
+    const renderAllPages = async () => {
+      setIsRendering(true);
+      setError(null);
+      const container = containerRef.current;
+      if (!container) return;
 
-    const renderPdf = async () => {
-      const canvas = canvasRef.current;
-      const context = canvas?.getContext('2d');
-      if (!canvas || !context) return;
+      // Clear previous renders
+      container.innerHTML = '';
 
       // Cancel previous render task if running
       if (renderTaskRef.current) {
@@ -54,66 +60,81 @@ export const PdfPreview: React.FC<PdfPreviewProps> = ({ file, className, desired
         const arrayBuffer = await file.arrayBuffer();
         if (!isSubscribed) return;
 
-        const typedarray = new Uint8Array(arrayBuffer);
-        const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
-        if (!isSubscribed) {
-          // pdf.destroy(); // PDFDocumentProxy does not have a destroy method.
-          return;
-        }
+        const typedArray = new Uint8Array(arrayBuffer);
+        const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        if (!isSubscribed) return;
+
         pdfDocRef.current = pdf;
+        setTotalPages(pdf.numPages);
 
-        const targetPage = Math.max(1, Math.min(pageNumber, pdf.numPages));
-        const page = await pdf.getPage(targetPage);
-        if (!isSubscribed) return;
+        const startPage = pageNumber ? Math.max(1, Math.min(pageNumber, pdf.numPages)) : 1;
+        const endPage = pageNumber ? startPage : pdf.numPages;
 
-        const originalViewport = page.getViewport({ scale: 1 });
-        const dpr = window.devicePixelRatio || 1;
+        for (let pageNum = startPage; pageNum <= endPage; pageNum++) {
+          if (!isSubscribed) return;
 
-        // Determine effective scale
-        let scale = propScale || 1;
-        if (!propScale && desiredWidth) {
-          scale = desiredWidth / originalViewport.width;
-        }
+          const page = await pdf.getPage(pageNum);
+          if (!isSubscribed) return;
 
-        const cssViewport = page.getViewport({ scale });
-        const cssWidth = cssViewport.width;
-        const cssHeight = cssViewport.height;
+          const originalViewport = page.getViewport({ scale: 1 });
+          const dpr = window.devicePixelRatio || 1;
 
-        // Set high-DPI canvas buffer resolution
-        canvas.width = Math.floor(cssWidth * dpr);
-        canvas.height = Math.floor(cssHeight * dpr);
-        canvas.style.width = `${cssWidth}px`;
-        canvas.style.height = `${cssHeight}px`;
+          let scale = propScale || 1;
+          if (!propScale && desiredWidth) {
+            scale = desiredWidth / originalViewport.width;
+          }
 
-        context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = 'high';
+          const cssViewport = page.getViewport({ scale });
+          const cssWidth = cssViewport.width;
+          const cssHeight = cssViewport.height;
 
-        const renderViewport = page.getViewport({ scale: scale * dpr });
-        const renderTask = page.render({
-          canvas: canvas,
-          canvasContext: context,
-          viewport: renderViewport,
-        });
-        renderTaskRef.current = renderTask;
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          if (!context) continue;
 
-        await renderTask.promise;
-        renderTaskRef.current = null;
+          canvas.width = Math.floor(cssWidth * dpr);
+          canvas.height = Math.floor(cssHeight * dpr);
+          canvas.style.width = `${cssWidth}px`;
+          canvas.style.height = `${cssHeight}px`;
+          canvas.style.display = 'block';
+          canvas.style.maxWidth = '100%';
+          if (pageNum < endPage) {
+            canvas.style.marginBottom = '16px'; // Add space between pages
+          }
 
-        if (!isSubscribed) return;
+          container.appendChild(canvas);
 
-        // Notify parent of rendered dimensions and original PDF size after render completes
-        if (onRenderRef.current) {
-          onRenderRef.current(cssWidth, cssHeight, originalViewport.width, originalViewport.height, pdf.numPages);
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = 'high';
+
+          const renderViewport = page.getViewport({ scale: scale * dpr });
+          const renderTask = page.render({
+            canvas: canvas,
+            canvasContext: context,
+            viewport: renderViewport,
+          });
+          renderTaskRef.current = renderTask;
+
+          await renderTask.promise;
+          renderTaskRef.current = null;
+
+          if (!isSubscribed) return;
+
+          if (pageNum === startPage && onRenderRef.current) {
+            onRenderRef.current(cssWidth, cssHeight, originalViewport.width, originalViewport.height, pdf.numPages);
+          }
         }
       } catch (renderError: any) {
-        // Ignore expected cancellation exceptions from PDF.js
         if (renderError?.name !== 'RenderingCancelledException') {
           console.error('[PdfPreview] Error rendering PDF:', renderError);
+          setError('Failed to render PDF. The file may be corrupt or unsupported.');
         }
+      } finally {
+        setIsRendering(false);
       }
     };
 
-    renderPdf();
+    renderAllPages();
 
     return () => {
       isSubscribed = false;
@@ -132,11 +153,10 @@ export const PdfPreview: React.FC<PdfPreviewProps> = ({ file, className, desired
     };
   }, [file, desiredWidth, propScale, pageNumber]);
 
-  return (
-    <canvas 
-      ref={canvasRef} 
-      className={className} 
-      style={{ imageRendering: '-webkit-optimize-contrast', display: 'block' }}
-    />
-  );
+  if (error) {
+    return <div className={`text-red-500 text-xs p-4 bg-red-50 rounded-lg ${className}`}>{error}</div>;
+  }
+
+  // This div will now contain multiple canvas elements, one for each page.
+  return <div ref={containerRef} className={className} />;
 };
