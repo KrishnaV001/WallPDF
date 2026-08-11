@@ -102,5 +102,53 @@
     "description": "Extract each PDF page into high-quality JPG or PNG images.",
     "category": "Convert PDF",
     "color": "purple"
+  },
+  {
+    "slug": "split-pdf",
+    "title": "Split PDF - WallPDF",
+    "h1": "Split PDF",
+    "description": "Separate one page or a whole set for easy conversion into independent PDF files.",
+    "category": "Organize PDF",
+    "color": "blue"
+  },
+  {
+    "slug": "compress-pdf",
+    "title": "Compress PDF - WallPDF",
+    "h1": "Compress PDF",
+    "description": "Reduce file size while optimizing for maximal PDF quality.",
+    "category": "Optimize PDF",
+    "color": "green"
+  },
+  {
+    "slug": "edit-pdf",
+    "title": "Edit PDF - WallPDF",
+    "h1": "Edit PDF",
+    "description": "Add text, images, shapes or freehand annotations to a PDF document.",
+    "category": "Edit PDF",
+    "color": "purple"
+  },
+  {
+    "slug": "rotate-pdf",
+    "title": "Rotate PDF Pages Online - WallPDF",
+    "h1": "Rotate PDF",
+    "description": "Rotate individual PDF pages or the entire document to the correct orientation in seconds.",
+    "category": "Organize PDF",
+    "color": "red"
+  },
+  {
+    "slug": "watermark-pdf",
+    "title": "Add Watermark to PDF - WallPDF",
+    "h1": "Watermark PDF",
+    "description": "Stamp text or image watermarks over your PDF. Easily customize typography, transparency, and position.",
+    "category": "Edit PDF",
+    "color": "purple"
+  },
+  {
+    "slug": "add-page-numbers",
+    "title": "Add Page Numbers to PDF - WallPDF",
+    "h1": "Add Page Numbers",
+    "description": "Easily insert page numbers into your PDF documents. Choose your preferred position and typography.",
+    "category": "Edit PDF",
+    "color": "purple"
   }
 ]
