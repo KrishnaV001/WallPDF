@@ -12,9 +12,14 @@ interface PdfPreviewProps { // Keep this line as it's part of the selection
   scale?: number;
   pageNumber?: number;
   onRender?: (width: number, height: number, originalWidth?: number, originalHeight?: number, totalPages?: number) => void;
+  // By default the rendered canvas is CSS-clamped to max-width:100% so it can never
+  // overflow its container. Zoomable previews (e.g. the crop editor) need the canvas
+  // to be able to exceed its container's width so the user can zoom in and scroll -
+  // pass allowOverflow to opt out of the clamp for those cases.
+  allowOverflow?: boolean;
 }
 
-export const PdfPreview: React.FC<PdfPreviewProps> = ({ file, className, desiredWidth, scale: propScale, pageNumber, onRender }) => {
+export const PdfPreview: React.FC<PdfPreviewProps> = ({ file, className, desiredWidth, scale: propScale, pageNumber, onRender, allowOverflow }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const renderTaskRef = useRef<any>(null);
   const pdfDocRef = useRef<any>(null);
@@ -97,7 +102,9 @@ export const PdfPreview: React.FC<PdfPreviewProps> = ({ file, className, desired
           canvas.style.width = `${cssWidth}px`;
           canvas.style.height = `${cssHeight}px`;
           canvas.style.display = 'block';
-          canvas.style.maxWidth = '100%';
+          if (!allowOverflow) {
+            canvas.style.maxWidth = '100%';
+          }
           if (pageNum < endPage) {
             canvas.style.marginBottom = '16px'; // Add space between pages
           }
@@ -151,7 +158,7 @@ export const PdfPreview: React.FC<PdfPreviewProps> = ({ file, className, desired
         pdfDocRef.current = null;
       }
     };
-  }, [file, desiredWidth, propScale, pageNumber]);
+  }, [file, desiredWidth, propScale, pageNumber, allowOverflow]);
 
   if (error) {
     return <div className={`text-red-500 text-xs p-4 bg-red-50 rounded-lg ${className}`}>{error}</div>;

@@ -8,8 +8,13 @@ import {
   MousePointerClick,
   ZoomIn,
   ZoomOut,
-  Scan
+  RotateCcw
 } from 'lucide-react';
+
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3;
+const ZOOM_STEP = 0.25;
+const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
 export interface CropArea {
   // Crop bounds in CSS pixels relative to rendered preview element
@@ -32,18 +37,10 @@ export interface PdfCropEditorProps {
 
 type DragMode = 'draw' | 'move' | 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | null;
 
-// Zoom bounds relative to the "fit width" baseline (1 = fits the viewport width).
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 4;
-const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
-
 export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  // Scrollable viewport that wraps the page preview - lets a zoomed-in page
-  // (rendered at or above its true size) be panned instead of being squashed
-  // down to fit.
-  const viewportRef = useRef<HTMLDivElement>(null);
-
+  const scrollWrapperRef = useRef<HTMLDivElement>(null);
+  
   // Active page & dimensions
   const [selectedPage, setSelectedPage] = useState<number>(1);
   const [renderedWidth, setRenderedWidth] = useState<number>(0);
@@ -52,22 +49,119 @@ export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange
   const [originalPdfHeight, setOriginalPdfHeight] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
 
-  // Zoom: 1 = "fit width" baseline (page rendered at full available width,
-  // preserving its true aspect ratio - no height-based squashing).
-  // fitScaleRef holds the CSS-px-per-PDF-point scale that achieves that fit;
-  // the scale actually handed to PdfPreview is fitScale * zoom.
+  // Zoom: 1 = page rendered at its "natural" size (fit to the available
+  // preview width, true aspect ratio, no CSS distortion). >1 zooms in and
+  // the preview scrolls; <1 zooms out.
   const [zoom, setZoom] = useState<number>(1);
-  const fitScaleRef = useRef<number | null>(null);
-  const prevRenderedDimsRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
-  const pinchStateRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const zoomRef = useRef(zoom);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
-  // Reset zoom & the learned fit-scale whenever a new file is loaded so the
-  // page starts back at a clean "fit width" view.
+  // Width of the scroll wrapper, measured live, used as the "100% zoom" basis
+  // instead of a hardcoded desiredWidth so the page never gets squashed to fit.
+  const [baseWidth, setBaseWidth] = useState<number>(0);
+  const desiredWidth = Math.max(100, Math.round((baseWidth || 560) * zoom));
+
   useEffect(() => {
-    fitScaleRef.current = null;
-    prevRenderedDimsRef.current = { w: 0, h: 0 };
+    const el = scrollWrapperRef.current;
+    if (!el) return;
+    const updateWidth = () => {
+      const w = el.clientWidth;
+      if (w > 0) setBaseWidth(Math.max(200, w - 16));
+    };
+    updateWidth();
+    const ro = new ResizeObserver(updateWidth);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Reset zoom whenever a new file is loaded.
+  useEffect(() => {
     setZoom(1);
   }, [file]);
+
+  const zoomIn = useCallback(() => setZoom(z => clampZoom(+(z + ZOOM_STEP).toFixed(2))), []);
+  const zoomOut = useCallback(() => setZoom(z => clampZoom(+(z - ZOOM_STEP).toFixed(2))), []);
+  const resetZoom = useCallback(() => setZoom(1), []);
+
+  // Pinch-to-zoom (two-finger touch) + two-finger pan, and ctrl/cmd + scroll
+  // (trackpad pinch) on the scroll wrapper.
+  useEffect(() => {
+    const el = scrollWrapperRef.current;
+    if (!el) return;
+
+    const getDistance = (touches: TouchList) => {
+      const [t1, t2] = [touches[0], touches[1]];
+      return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    };
+
+    let pinchState: {
+      initialDistance: number;
+      initialZoom: number;
+      initialMidX: number;
+      initialMidY: number;
+      initialScrollLeft: number;
+      initialScrollTop: number;
+    } | null = null;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        // Cancel any in-progress single-finger crop drag so it doesn't fight the pinch.
+        setDragMode(null);
+        const [t1, t2] = [e.touches[0], e.touches[1]];
+        pinchState = {
+          initialDistance: getDistance(e.touches),
+          initialZoom: zoomRef.current,
+          initialMidX: (t1.clientX + t2.clientX) / 2,
+          initialMidY: (t1.clientY + t2.clientY) / 2,
+          initialScrollLeft: el.scrollLeft,
+          initialScrollTop: el.scrollTop,
+        };
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchState) {
+        e.preventDefault();
+        const [t1, t2] = [e.touches[0], e.touches[1]];
+        const newDistance = getDistance(e.touches);
+        const midX = (t1.clientX + t2.clientX) / 2;
+        const midY = (t1.clientY + t2.clientY) / 2;
+        const ratio = newDistance / pinchState.initialDistance;
+        setZoom(clampZoom(+(pinchState.initialZoom * ratio).toFixed(2)));
+        el.scrollLeft = pinchState.initialScrollLeft - (midX - pinchState.initialMidX);
+        el.scrollTop = pinchState.initialScrollTop - (midY - pinchState.initialMidY);
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        pinchState = null;
+      }
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      // Trackpad pinch-to-zoom is reported as a ctrl/cmd + wheel event.
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setZoom(z => clampZoom(+(z - e.deltaY * 0.01).toFixed(2)));
+      }
+    };
+
+    el.addEventListener('touchstart', handleTouchStart, { passive: false });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd);
+    el.addEventListener('touchcancel', handleTouchEnd);
+    el.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+      el.removeEventListener('touchcancel', handleTouchEnd);
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
 
   // Crop box state (starts uninitialized / 0x0)
   const [crop, setCrop] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 });
@@ -79,30 +173,28 @@ export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange
   const [applyToAll, setApplyToAll] = useState<boolean>(true);
   const [pageRange, setPageRange] = useState<string>('');
 
+  // Tracks the previous rendered CSS size so a zoom/resize/page-switch can
+  // rescale an existing crop box proportionally instead of leaving it in
+  // stale pixel coordinates from the old size.
+  const prevDimsRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+
   // Callback when PdfPreview finishes rendering canvas
   const handleRender = useCallback((width: number, height: number, origW?: number, origH?: number, pageCount?: number) => {
-    // Learn the "fit width" scale the first time we see the page's true
-    // point size - everything after this is driven by explicit scale props,
-    // not desiredWidth, so the page is always rendered at its real aspect
-    // ratio instead of being squeezed to fit a height.
-    if (fitScaleRef.current === null && origW) {
-      fitScaleRef.current = width / origW;
+    const prev = prevDimsRef.current;
+    if (prev.width > 0 && prev.height > 0 && (prev.width !== width || prev.height !== height)) {
+      const scaleX = width / prev.width;
+      const scaleY = height / prev.height;
+      setCrop(c => {
+        if (c.width <= 0 || c.height <= 0) return c;
+        return {
+          x: c.x * scaleX,
+          y: c.y * scaleY,
+          width: c.width * scaleX,
+          height: c.height * scaleY,
+        };
+      });
     }
-
-    // If the rendered pixel size changed (zoom level or page swap), rescale
-    // any existing crop box proportionally so the selection stays anchored
-    // to the same relative area of the page instead of appearing to jump.
-    const prev = prevRenderedDimsRef.current;
-    if (prev.w > 0 && prev.h > 0 && (prev.w !== width || prev.h !== height)) {
-      const scaleX = width / prev.w;
-      const scaleY = height / prev.h;
-      setCrop((c) =>
-        c.width > 0 && c.height > 0
-          ? { x: c.x * scaleX, y: c.y * scaleY, width: c.width * scaleX, height: c.height * scaleY }
-          : c
-      );
-    }
-    prevRenderedDimsRef.current = { w: width, h: height };
+    prevDimsRef.current = { width, height };
 
     setRenderedWidth(width);
     setRenderedHeight(height);
@@ -110,57 +202,6 @@ export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange
     if (origH) setOriginalPdfHeight(origH);
     if (pageCount) setTotalPages(pageCount);
   }, []);
-
-  // Zoom in/out around a fixed step, clamped to [MIN_ZOOM, MAX_ZOOM].
-  const zoomBy = useCallback((factor: number) => {
-    setZoom((z) => clampZoom(z * factor));
-  }, []);
-
-  const resetZoom = useCallback(() => setZoom(1), []);
-
-  // --- Pinch-to-zoom (two-finger touch) ---
-  const getTouchDistance = (touches: React.TouchList) => {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.hypot(dx, dy);
-  };
-
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      pinchStateRef.current = { distance: getTouchDistance(e.touches), zoom };
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length === 2 && pinchStateRef.current && viewportRef.current) {
-      e.preventDefault();
-      const viewport = viewportRef.current;
-      const rect = viewport.getBoundingClientRect();
-
-      const newDistance = getTouchDistance(e.touches);
-      const ratio = newDistance / pinchStateRef.current.distance;
-      const newZoom = clampZoom(pinchStateRef.current.zoom * ratio);
-      const zoomRatio = newZoom / zoom;
-
-      // Point under the fingers, in content space, before the zoom change -
-      // used to re-center so the pinch feels anchored rather than jumping.
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left + viewport.scrollLeft;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top + viewport.scrollTop;
-
-      setZoom(newZoom);
-      requestAnimationFrame(() => {
-        viewport.scrollLeft = midX * zoomRatio - rect.width / 2;
-        viewport.scrollTop = midY * zoomRatio - rect.height / 2;
-      });
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length < 2) {
-      pinchStateRef.current = null;
-    }
-  };
 
   // Compute normalized & PDF points crop whenever crop or rendered dimensions change
   useEffect(() => {
@@ -329,7 +370,48 @@ export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange
                 ? "Drag handles to resize or click & drag page to draw a new box"
                 : "Click and drag anywhere on the page to draw crop area"}
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              {/* Zoom Controls */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800 rounded-full p-1">
+                <button
+                  type="button"
+                  onClick={zoomOut}
+                  disabled={zoom <= MIN_ZOOM}
+                  className="w-6 h-6 flex items-center justify-center rounded-full text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Zoom out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetZoom}
+                  className="text-[11px] font-bold text-slate-600 dark:text-zinc-300 w-10 text-center hover:text-[#E5252A]"
+                  title="Reset zoom"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={zoomIn}
+                  disabled={zoom >= MAX_ZOOM}
+                  className="w-6 h-6 flex items-center justify-center rounded-full text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Zoom in"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                {zoom !== 1 && (
+                  <button
+                    type="button"
+                    onClick={resetZoom}
+                    className="w-6 h-6 flex items-center justify-center rounded-full text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 transition-colors"
+                    aria-label="Reset zoom to 100%"
+                    title="Reset zoom"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
               {crop.width > 0 && crop.height > 0 && (
                 <button
                   type="button"
@@ -349,77 +431,28 @@ export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange
             </div>
           </div>
 
-          {/* Zoom Controls */}
-          <div className="w-full flex items-center justify-between mb-3 px-1">
-            <span className="text-[11px] text-slate-400 dark:text-zinc-500">
-              Pinch with two fingers to zoom &middot; scroll to pan when zoomed in
-            </span>
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800 rounded-full p-1">
-              <button
-                type="button"
-                onClick={() => zoomBy(1 / 1.25)}
-                disabled={zoom <= MIN_ZOOM}
-                title="Zoom out"
-                className="p-1.5 rounded-full text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ZoomOut className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-[11px] font-bold text-slate-600 dark:text-zinc-300 w-10 text-center tabular-nums">
-                {Math.round(zoom * 100)}%
-              </span>
-              <button
-                type="button"
-                onClick={() => zoomBy(1.25)}
-                disabled={zoom >= MAX_ZOOM}
-                title="Zoom in"
-                className="p-1.5 rounded-full text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={resetZoom}
-                disabled={zoom === 1}
-                title="Reset zoom to fit width"
-                className="p-1.5 rounded-full text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <Scan className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Scrollable viewport - lets the page render at its true aspect
-              ratio (and be zoomed past the container width) instead of being
-              squashed to fit, while still letting you pan around it. */}
           <div
-            ref={viewportRef}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onTouchCancel={handleTouchEnd}
-            onWheel={(e) => {
-              if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                zoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08);
-              }
-            }}
-            className="relative w-full max-w-full overflow-auto bg-slate-100 dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-md flex items-start justify-center p-2"
-            style={{ maxHeight: '70vh', touchAction: 'none' }}
+            ref={scrollWrapperRef}
+            className="relative group w-full bg-slate-100 dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-md overflow-auto"
+            style={{ maxHeight: '70vh', touchAction: 'pan-x pan-y pinch-zoom' }}
           >
+            <div className="flex items-center justify-center min-h-full p-2" style={{ width: 'max-content', minWidth: '100%' }}>
             <div
               ref={containerRef}
               onPointerDown={(e) => handlePointerDown(e, 'draw')}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
-              className="relative select-none touch-none cursor-crosshair overflow-hidden rounded-xl bg-white dark:bg-zinc-950 shrink-0"
-              style={{ width: renderedWidth || '100%', height: renderedHeight || 'auto' }}
+              className="relative select-none touch-none cursor-crosshair rounded-xl bg-white dark:bg-zinc-950 shrink-0"
+              style={{ width: renderedWidth || baseWidth || '100%', height: renderedHeight || 'auto' }}
             >
-              {/* High Quality PDF Preview Render - rendered at true (fit-width x zoom) scale, aspect ratio always preserved */}
+              {/* High Quality PDF Preview Render - sized off the actual available
+                  width (times zoom) so the page always renders at its true aspect
+                  ratio instead of being squashed to fit. */}
               <PdfPreview
                 file={file}
                 pageNumber={selectedPage}
-                scale={fitScaleRef.current ? fitScaleRef.current * zoom : undefined}
-                desiredWidth={fitScaleRef.current ? undefined : 560}
+                desiredWidth={desiredWidth}
+                allowOverflow
                 className="pointer-events-none rounded-xl block"
                 onRender={handleRender}
               />
@@ -466,7 +499,7 @@ export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange
                   {/* Active Highlighted Crop Box */}
                   <div
                     onPointerDown={(e) => handlePointerDown(e, 'move')}
-                    className="absolute border-2 border-[#E5252A] bg-red-500/10 cursor-move group/crop shadow-xl"
+                    className="absolute border-2 border-dashed border-blue-500 bg-blue-500/10 cursor-move group/crop shadow-xl"
                     style={{
                       left: `${crop.x}px`,
                       top: `${crop.y}px`,
@@ -537,6 +570,7 @@ export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange
                   </div>
                 </>
               )}
+            </div>
             </div>
           </div>
         </div>
@@ -695,7 +729,7 @@ export const PdfCropEditor: React.FC<PdfCropEditorProps> = ({ file, onCropChange
 
                         {/* Crop Highlight Rectangle */}
                         <div
-                          className="absolute border-2 border-[#E5252A] bg-red-500/10 shadow-sm"
+                          className="absolute border-2 border-dashed border-blue-500 bg-blue-500/10 shadow-sm"
                           style={{
                             left: `${cropLeftPct}%`,
                             top: `${cropTopPct}%`,
