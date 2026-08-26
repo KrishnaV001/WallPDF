@@ -37,6 +37,7 @@ const CATEGORIES = [
   { id: 'Optimize PDF', label: 'Optimize PDF' },
   { id: 'Convert PDF', label: 'Convert PDF' },
   { id: 'Edit PDF', label: 'Edit PDF' },
+  { id: 'Image Tools', label: 'Image Tools' },
 ];
 
 export const ToolGrid: React.FC = () => {

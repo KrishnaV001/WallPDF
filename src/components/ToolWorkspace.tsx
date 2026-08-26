@@ -181,6 +181,13 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   const [margin, setMargin] = useState<'none' | 'small' | 'big'>('none');
   const [imageToPdfPreviewFile, setImageToPdfPreviewFile] = useState<Blob | null>(null);
   const [imageFormat, setImageFormat] = useState<'jpeg' | 'png'>('jpeg');
+  // --- compress-image tool state ---
+  const [compressedImageResults, setCompressedImageResults] = useState<Array<{
+    name: string;
+    originalSize: number;
+    compressedSize: number;
+    blobUrl: string;
+  }>>([]);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [pdfToImagePreviews, setPdfToImagePreviews] = useState<PdfToImagePreview[]>([]);
   const [selectedImagePages, setSelectedImagePages] = useState<Set<number>>(new Set());
@@ -649,6 +656,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       if (toolSlug !== 'image-to-pdf') setImageToPdfPreviewFile(null);
       setCompressedFileSize(null);
       setCompressedFile(null);
+      setCompressedImageResults((prev) => { prev.forEach((r) => URL.revokeObjectURL(r.blobUrl)); return []; });
     }
   }, [toolSlug, loadFirstPageForCropPreview, generatePagePreviews]);
 
@@ -681,6 +689,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       setOriginalFileSize(null);
       setCompressedFileSize(null);
       setCompressedFile(null);
+      setCompressedImageResults((prev) => { prev.forEach((r) => URL.revokeObjectURL(r.blobUrl)); return []; });
       setCropX(0); setCropY(0); setCropWidth(0); setCropHeight(0);
       setPreviewRenderedWidth(0); setPreviewRenderedHeight(0);
       // Clear imageToPdfPreviewFile if not image-to-pdf tool
@@ -743,6 +752,10 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     setImageFormat('jpeg');
     setPdfToImagePreviews([]);
     setSelectedImagePages(new Set());
+    // compress-image resets
+    compressedImageResults.forEach((r) => URL.revokeObjectURL(r.blobUrl));
+    setCompressedImageResults([]);
+    setTargetSizeKb('');
   };
 
   const handleDragEnd = (event: any) => {
@@ -880,10 +893,19 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     switch (slug) {
       case 'compress-pdf':
         return 'pdf';
+      case 'compress-image': {
+        if (compressedImageResults.length > 1) return 'zip';
+        const source = files[0];
+        if (source && source.type === 'image/webp') return 'webp';
+        return 'jpg';
+      }
+      case 'jpg-to-png':
+        return compressedImageResults.length > 1 ? 'zip' : 'png';
       case 'pdf-to-images':
         if (selectedImagePages.size > 1) {
           return 'zip';
         }
+        return imageFormat === 'jpeg' ? 'jpg' : 'png';
       case 'pdf-to-word': return 'docx';
       case 'pdf-to-powerpoint': return 'pptx';
       case 'pdf-to-excel': return 'xlsx';
@@ -911,6 +933,12 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     }
     if (slug === 'image-to-pdf') {
       return 'image/jpeg,image/png,image/gif,image/webp'; // Common image formats
+    }
+    if (slug === 'compress-image') {
+      return 'image/jpeg,image/png,image/webp';
+    }
+    if (slug === 'jpg-to-png') {
+      return 'image/jpeg';
     }
     if (slug === 'merge-pdf') {
       return 'application/pdf';
@@ -1285,6 +1313,193 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
 
         setProgress(100);
         setIsCompleted(true);
+      } else if (toolSlug === 'compress-image') {
+        if (files.length === 0) return;
+
+        setCompressionNote(null);
+        compressedImageResults.forEach((r) => URL.revokeObjectURL(r.blobUrl));
+        setCompressedImageResults([]);
+
+        const totalOriginalSize = files.reduce((sum, f) => sum + f.size, 0);
+        setOriginalFileSize(totalOriginalSize);
+
+        const targetBytesPerImage = targetSizeKb && !isNaN(parseFloat(targetSizeKb)) && parseFloat(targetSizeKb) > 0
+          ? parseFloat(targetSizeKb) * 1024
+          : null;
+
+        if (!targetBytesPerImage) {
+          throw new Error('Enter a compression value in KB before processing.');
+        }
+
+        // canvas.toBlob only supports a quality parameter for jpeg/webp. PNG is
+        // lossless and can't be resized to an arbitrary target size, so PNG
+        // sources are converted to JPEG whenever an exact target is requested.
+        const resolveOutputMime = (sourceType: string): string => (sourceType === 'image/webp' ? 'image/webp' : 'image/jpeg');
+
+        const results: Array<{ name: string; originalSize: number; compressedSize: number; blobUrl: string; blob: Blob }> = [];
+        let anyPngConverted = false;
+        let anyMissedTarget = false;
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          try {
+            const bitmap = await createImageBitmap(file);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { bitmap.close(); continue; }
+            ctx.drawImage(bitmap, 0, 0);
+            bitmap.close();
+
+            const mime = resolveOutputMime(file.type);
+            if (file.type === 'image/png') anyPngConverted = true;
+
+            const encode = (quality: number): Promise<Blob> => new Promise((resolve, reject) => {
+              canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))), mime, quality);
+            });
+
+            // Binary-search the encode quality so the result lands as close as
+            // possible to the requested exact target size.
+            let low = 0.02;
+            let high = 0.98;
+            let bestUnderTarget: Blob | null = null;
+            let smallestSeen: Blob | null = null;
+            const maxIterations = 8;
+            const closeEnoughRatio = 0.98;
+
+            for (let iter = 0; iter < maxIterations; iter++) {
+              const quality = (low + high) / 2;
+              const attempt = await encode(quality);
+              if (!smallestSeen || attempt.size < smallestSeen.size) smallestSeen = attempt;
+              if (attempt.size <= targetBytesPerImage) {
+                bestUnderTarget = attempt;
+                if (attempt.size >= targetBytesPerImage * closeEnoughRatio) break;
+                low = quality;
+              } else {
+                high = quality;
+              }
+            }
+            const finalBlob = bestUnderTarget ?? (smallestSeen as Blob);
+            if (!bestUnderTarget) anyMissedTarget = true;
+
+            const ext = mime === 'image/webp' ? 'webp' : 'jpg';
+            const baseName = file.name.replace(/\.[^.]+$/, '');
+
+            results.push({
+              name: `${baseName}-compressed.${ext}`,
+              originalSize: file.size,
+              compressedSize: finalBlob.size,
+              blobUrl: URL.createObjectURL(finalBlob),
+              blob: finalBlob,
+            });
+          } catch (imgErr) {
+            console.warn('[compress-image] skipped an image that failed to process', file.name, imgErr);
+          }
+
+          setProgress(Math.round(((i + 1) / files.length) * 90));
+        }
+
+        if (results.length === 0) {
+          throw new Error('None of the selected images could be compressed - they may be corrupted or in an unsupported format.');
+        }
+
+        if (anyPngConverted && anyMissedTarget) {
+          setCompressionNote("PNG images were converted to JPEG to get as close as possible to your target size; some images couldn't reach it even at the lowest quality.");
+        } else if (anyPngConverted) {
+          setCompressionNote("PNG images were converted to JPEG so an exact target size could be reached (PNG is lossless and can't be resized to a specific size).");
+        } else if (anyMissedTarget) {
+          setCompressionNote("Some images couldn't reach your target size even at the lowest quality - the closest possible result was used instead.");
+        }
+
+        setCompressedImageResults(results);
+
+        if (results.length === 1) {
+          const only = results[0];
+          const outFile = new File([only.blob], only.name, { type: only.blob.type });
+          setCompressedFile(outFile);
+          setCompressedFileSize(only.compressedSize);
+          setDownloadUrl(URL.createObjectURL(only.blob));
+        } else {
+          const zip = new JSZip();
+          results.forEach((r) => zip.file(r.name, r.blob));
+          const zipBlob = await zip.generateAsync({ type: 'blob' });
+          setCompressedFileSize(zipBlob.size);
+          setDownloadUrl(URL.createObjectURL(zipBlob));
+        }
+
+        setProgress(100);
+        setIsCompleted(true);
+      } else if (toolSlug === 'jpg-to-png') {
+        if (files.length === 0) return;
+
+        setCompressionNote(null);
+        compressedImageResults.forEach((r) => URL.revokeObjectURL(r.blobUrl));
+        setCompressedImageResults([]);
+
+        const totalOriginalSize = files.reduce((sum, f) => sum + f.size, 0);
+        setOriginalFileSize(totalOriginalSize);
+
+        const results: Array<{ name: string; originalSize: number; compressedSize: number; blobUrl: string; blob: Blob }> = [];
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          try {
+            const bitmap = await createImageBitmap(file);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { bitmap.close(); continue; }
+            // JPGs have no transparency, so a plain white background is the correct base for the PNG.
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bitmap, 0, 0);
+            bitmap.close();
+
+            const pngBlob: Blob = await new Promise((resolve, reject) => {
+              canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))), 'image/png');
+            });
+
+            const baseName = file.name.replace(/\.[^.]+$/, '');
+            results.push({
+              name: `${baseName}.png`,
+              originalSize: file.size,
+              compressedSize: pngBlob.size,
+              blobUrl: URL.createObjectURL(pngBlob),
+              blob: pngBlob,
+            });
+          } catch (imgErr) {
+            console.warn('[jpg-to-png] skipped an image that failed to convert', file.name, imgErr);
+          }
+
+          setProgress(Math.round(((i + 1) / files.length) * 90));
+        }
+
+        if (results.length === 0) {
+          throw new Error('None of the selected images could be converted - they may be corrupted or not actually JPG files.');
+        }
+
+        setCompressedImageResults(results);
+
+        if (results.length === 1) {
+          const only = results[0];
+          const outFile = new File([only.blob], only.name, { type: 'image/png' });
+          setCompressedFile(outFile);
+          setCompressedFileSize(only.compressedSize);
+          setDownloadUrl(URL.createObjectURL(only.blob));
+        } else {
+          const zip = new JSZip();
+          results.forEach((r) => zip.file(r.name, r.blob));
+          const zipBlob = await zip.generateAsync({ type: 'blob' });
+          setCompressedFileSize(zipBlob.size);
+          setDownloadUrl(URL.createObjectURL(zipBlob));
+        }
+
+        setProgress(100);
+        setIsCompleted(true);
       } else if (toolSlug === 'pdf-to-word') {
         // Simulate PDF to Word conversion for UI flow
         console.log('[ToolWorkspace] Simulating PDF to Word conversion.');
@@ -1536,7 +1751,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
         const pdfToConvert = files[0];
         const pdfBytes = await pdfToConvert.arrayBuffer();
         const zip = new JSZip();
-        const pdfName = pdfToConvert.name.replace(/\.pdf$/i, '');
+        const pdfName = pdfToConvert.name.replace(/\.pdf$/i,'');
 
         setProgress(10);
 
@@ -1778,7 +1993,11 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                 ></div>
               </div>
               <p className="text-sm text-slate-500 dark:text-zinc-400">
-                {progress < 50 ? 'Loading PDF...' : progress < 75 ? 'Analyzing structure...' : 'Compressing file...'}
+                {toolSlug === 'compress-image'
+                  ? (progress < 90 ? `Compressing image${files.length > 1 ? 's' : ''}...` : 'Finishing up...')
+                  : toolSlug === 'jpg-to-png'
+                  ? (progress < 90 ? `Converting image${files.length > 1 ? 's' : ''}...` : 'Finishing up...')
+                  : (progress < 50 ? 'Loading PDF...' : progress < 75 ? 'Analyzing structure...' : 'Compressing file...')}
               </p>
             </div>
           ) : isCompleted && downloadUrl ? (
@@ -1805,6 +2024,55 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                       {originalFileSize > compressedFileSize && <p className="font-bold text-emerald-600 dark:text-emerald-400">
                         You saved {((1 - compressedFileSize / originalFileSize) * 100).toFixed(0)}%
                       </p>}
+                      {compressionNote && (
+                        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 max-w-xs mx-auto">{compressionNote}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {(toolSlug === 'compress-image' || toolSlug === 'jpg-to-png') && compressedImageResults.length > 0 && (
+                <div className="flex flex-col items-center gap-4">
+                  {compressedImageResults.length === 1 ? (
+                    <div className="w-48 p-2 border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900">
+                      <img
+                        src={compressedImageResults[0].blobUrl}
+                        alt={compressedImageResults[0].name}
+                        className="w-full h-auto rounded-md bg-white dark:bg-zinc-700 shadow-sm"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full max-w-md max-h-[280px] overflow-y-auto space-y-2 rounded-lg bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-3">
+                      {compressedImageResults.map((r) => (
+                        <div key={r.name} className="flex items-center gap-3 bg-white dark:bg-zinc-800 rounded-lg p-2">
+                          <img src={r.blobUrl} alt={r.name} className="w-10 h-10 rounded-md object-cover shrink-0" />
+                          <div className="min-w-0 text-left flex-1">
+                            <p className="text-xs font-semibold text-slate-800 dark:text-zinc-200 truncate">{r.name}</p>
+                            <p className="text-[10px] text-slate-400 dark:text-zinc-400">
+                              {formatFileSize(r.originalSize)} {'\u2192'} {formatFileSize(r.compressedSize)}
+                              {r.compressedSize < r.originalSize && (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold"> (-{((1 - r.compressedSize / r.originalSize) * 100).toFixed(0)}%)</span>
+                              )}
+                            </p>
+                          </div>
+                          <a href={r.blobUrl} download={r.name} className="text-[10px] font-semibold text-[#E5252A] hover:underline shrink-0">Save</a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {originalFileSize !== null && compressedFileSize !== null && (
+                    <div className="text-center text-sm text-slate-600 dark:text-zinc-300">
+                      <p>Original: <span className="font-semibold">{formatFileSize(originalFileSize)}</span></p>
+                      <p>{toolSlug === 'jpg-to-png' ? 'PNG output' : 'Compressed'}: <span className="font-semibold">{formatFileSize(compressedFileSize)}</span>{compressedImageResults.length > 1 && ' (zip)'}</p>
+                      {originalFileSize > compressedFileSize ? (
+                        <p className="font-bold text-emerald-600 dark:text-emerald-400">
+                          You saved {((1 - compressedFileSize / originalFileSize) * 100).toFixed(0)}%
+                        </p>
+                      ) : toolSlug === 'jpg-to-png' && compressedFileSize > originalFileSize ? (
+                        <p className="text-xs text-slate-400 dark:text-zinc-500">
+                          PNG is lossless, so it can end up larger than the source JPG.
+                        </p>
+                      ) : null}
                       {compressionNote && (
                         <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 max-w-xs mx-auto">{compressionNote}</p>
                       )}
@@ -2266,6 +2534,28 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                     </p>
                   </div>
                 )}
+                {toolSlug === 'compress-image' && (
+                  <div className="w-full space-y-3 bg-slate-50 dark:bg-zinc-800/50 p-5 rounded-xl border border-slate-200 dark:border-zinc-700">
+                    <label htmlFor="target-size-image" className="block text-sm font-semibold text-slate-900 dark:text-white">
+                      Compress To
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="target-size-image"
+                        type="number"
+                        min={1}
+                        value={targetSizeKb}
+                        onChange={(e) => setTargetSizeKb(e.target.value)}
+                        placeholder="e.g., 200"
+                        className="w-full pl-4 pr-12 py-3 text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+                      />
+                      <span className="absolute inset-y-0 right-4 flex items-center text-sm text-slate-400 dark:text-zinc-500 pointer-events-none">KB</span>
+                    </div>
+                    <p className="text-xs text-slate-400 dark:text-zinc-500">
+                      Each image is compressed as close as possible to this exact size. PNGs are converted to JPEG so the target can actually be hit.
+                    </p>
+                  </div>
+                )}
                 {toolSlug === 'pdf-to-images' && files.length === 1 && (
                   <div className="w-full space-y-4">
                     <div className="flex items-center justify-between">
@@ -2537,7 +2827,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
 
                 <button
                   onClick={handleProcess}
-                  disabled={isProcessing}
+                  disabled={isProcessing || (toolSlug === 'compress-image' && !(targetSizeKb && parseFloat(targetSizeKb) > 0))}
                   className="w-full sm:w-auto px-10 py-3.5 bg-[#E5252A] hover:bg-[#C51920] disabled:bg-slate-400 text-white font-bold text-sm rounded-full shadow-md transition-all flex items-center justify-center space-x-2"
                 >
                   {isProcessing ? (

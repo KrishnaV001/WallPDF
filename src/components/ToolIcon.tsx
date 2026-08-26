@@ -84,6 +84,26 @@ export const ToolIcon: React.FC<ToolIconProps> = ({ slug, className = "w-6 h-6" 
         </svg>
       );
 
+    case 'compress-image':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <circle cx="8.5" cy="8.5" r="1.5" />
+          <path d="M21 15l-5-5-6 6" />
+          <polyline points="16 21 21 21 21 16" />
+          <polyline points="8 3 3 3 3 8" />
+        </svg>
+      );
+
+    case 'jpg-to-png':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3" />
+          <polyline points="17 3 18.7 6.7 15 8" />
+          <polyline points="7 21 5.3 17.3 9 16" />
+        </svg>
+      );
+
     // Default Fallback PDF Icon
     default:
       return (

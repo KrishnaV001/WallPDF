@@ -150,5 +150,21 @@
     "description": "Easily insert page numbers into your PDF documents. Choose your preferred position and typography.",
     "category": "Edit PDF",
     "color": "purple"
+  },
+  {
+    "slug": "compress-image",
+    "title": "Compress Image - Reduce JPG, PNG & WebP Size - WallPDF",
+    "h1": "Compress Image",
+    "description": "Shrink JPG, PNG, and WebP images by quality, format, or dimensions, entirely in your browser.",
+    "category": "Image Tools",
+    "color": "green"
+  },
+  {
+    "slug": "jpg-to-png",
+    "title": "JPG to PNG - Convert JPG Images to PNG - WallPDF",
+    "h1": "JPG to PNG",
+    "description": "Convert JPG or JPEG images to PNG format, entirely in your browser.",
+    "category": "Image Tools",
+    "color": "blue"
   }
 ]
