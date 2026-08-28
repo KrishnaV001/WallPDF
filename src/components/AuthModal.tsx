@@ -108,17 +108,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm transition-opacity"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity"
       onClick={onClose}
     >
       <div
-        className="bg-white border border-slate-200/80 rounded-3xl shadow-2xl w-full max-w-md p-6 sm:p-8 relative overflow-hidden transition-transform transform scale-100"
+        className="bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 rounded-3xl shadow-2xl dark:shadow-black/40 w-full max-w-md p-6 sm:p-8 relative overflow-hidden transition-transform transform scale-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
+          className="absolute top-5 right-5 text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -132,10 +132,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             alt="WallPDF Logo"
             className="w-10 h-10 mx-auto mb-3"
           />
-          <h2 className="text-2xl font-bold text-slate-900">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
             {mode === 'signin' ? 'Welcome back' : 'Create an account'}
           </h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
             {mode === 'signin'
               ? 'Sign in to manage your documents and preferences'
               : 'Join WallPDF for fast, browser-powered tools'}
@@ -144,7 +144,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-3 bg-rose-50 text-rose-600 text-xs rounded-xl font-medium border border-rose-100">
+          <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs rounded-xl font-medium border border-rose-100 dark:border-rose-900/60">
             {error}
           </div>
         )}
@@ -154,7 +154,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           type="button"
           onClick={handleGoogleAuth}
           disabled={isLoading}
-          className="w-full flex items-center justify-center space-x-3 bg-white border border-slate-300 hover:border-slate-400 text-slate-700 font-semibold py-2.5 px-4 rounded-xl shadow-sm hover:bg-slate-50 transition-all duration-150 mb-5 disabled:opacity-50"
+          className="w-full flex items-center justify-center space-x-3 bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 hover:border-slate-400 dark:hover:border-zinc-600 text-slate-700 dark:text-zinc-200 font-semibold py-2.5 px-4 rounded-xl shadow-sm hover:bg-slate-50 dark:hover:bg-zinc-700 transition-all duration-150 mb-5 disabled:opacity-50"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -181,8 +181,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Divider */}
         <div className="relative flex items-center justify-center mb-5">
-          <div className="border-t border-slate-200 w-full"></div>
-          <span className="bg-white px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider absolute">
+          <div className="border-t border-slate-200 dark:border-zinc-800 w-full"></div>
+          <span className="bg-white dark:bg-zinc-900 px-3 text-[11px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider absolute">
             or email
           </span>
         </div>
@@ -191,7 +191,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'signup' && (
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
                 Full name
               </label>
               <input
@@ -200,12 +200,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 placeholder="Jane Doe"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+                className="w-full px-3.5 py-2 text-sm bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 border border-slate-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
               />
             </div>
           )}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
               Email address
             </label>
             <input
@@ -214,12 +214,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               placeholder="name@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+              className="w-full px-3.5 py-2 text-sm bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 border border-slate-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1">
               Password
             </label>
             <input
@@ -228,28 +228,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+              className="w-full px-3.5 py-2 text-sm bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 border border-slate-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
             />
           </div>
 
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] disabled:opacity-50 mt-2"
+            className="w-full py-2.5 px-4 bg-[#E5252A] hover:bg-[#C51920] text-white font-semibold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] disabled:opacity-50 mt-2"
           >
             {isLoading ? 'Processing...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
           </button>
         </form>
 
         {/* Footer Toggle */}
-        <div className="mt-6 text-center text-xs text-slate-500">
+        <div className="mt-6 text-center text-xs text-slate-500 dark:text-zinc-400">
           {mode === 'signin' ? (
             <p>
               Don't have an account?{' '}
               <button
                 type="button"
                 onClick={() => setMode('signup')}
-                className="text-rose-600 font-semibold hover:underline ml-1"
+                className="text-[#E5252A] font-semibold hover:underline ml-1"
               >
                 Sign Up
               </button>
@@ -260,7 +260,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="button"
                 onClick={() => setMode('signin')}
-                className="text-rose-600 font-semibold hover:underline ml-1"
+                className="text-[#E5252A] font-semibold hover:underline ml-1"
               >
                 Sign In
               </button>

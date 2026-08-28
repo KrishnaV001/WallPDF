@@ -1,7 +1,6 @@
 ---
 import '../styles/global.css';
 import { ClientApp } from '../components/ClientApp';
-import '../../fonts.css';
 
 interface Props {
   title: string;
@@ -19,7 +18,15 @@ const { title, description } = Astro.props;
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href="/wallpdf-logo(1).svg" />
-    
+
+    <!-- Lato font (Google Fonts CDN) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,300;0,400;0,700;0,900;1,400&display=swap"
+      rel="stylesheet"
+    />
+
     <!-- Inline Theme Initializer -->
     <script is:inline>
       (function() {

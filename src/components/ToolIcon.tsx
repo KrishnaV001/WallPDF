@@ -84,6 +84,59 @@ export const ToolIcon: React.FC<ToolIconProps> = ({ slug, className = "w-6 h-6" 
         </svg>
       );
 
+    case 'pdf-to-excel':
+    case 'excel-to-pdf':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="8" y1="13" x2="16" y2="19" />
+          <line x1="16" y1="13" x2="8" y2="19" />
+        </svg>
+      );
+
+    case 'pdf-to-images':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="7" y="7" width="14" height="14" rx="2" />
+          <circle cx="12.5" cy="12.5" r="1.25" />
+          <polyline points="21 17 17 13 10 20" />
+          <path d="M5 17H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v1" />
+        </svg>
+      );
+
+    case 'rotate-pdf':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 3H6a2 2 0 0 0-2 2v3" />
+          <path d="M15 21h3a2 2 0 0 0 2-2v-3" />
+          <rect x="8" y="8" width="8" height="8" rx="1.5" />
+          <path d="M20.5 6.5a8 8 0 0 0-13-3.5" />
+          <polyline points="7.5 3 7.5 6.5 4 6.5" />
+        </svg>
+      );
+
+    case 'watermark-pdf':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+          <polyline points="14 2 14 8 20 8" />
+          <text x="7" y="18" fontSize="8" fontWeight="700" stroke="none" fill="currentColor" opacity="0.55">W</text>
+        </svg>
+      );
+
+    case 'add-page-numbers':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="8" y1="12" x2="14" y2="12" />
+          <line x1="8" y1="15.5" x2="12" y2="15.5" />
+          <circle cx="16.5" cy="18.5" r="2.5" fill="currentColor" stroke="none" opacity="0.15" />
+          <text x="15" y="20" fontSize="4.5" fontWeight="700" stroke="none" fill="currentColor">12</text>
+        </svg>
+      );
+
     case 'compress-image':
       return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

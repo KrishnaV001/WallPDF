@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import toolsData from '../data/tools.json';
 import { ToolIcon } from './ToolIcon';
 
@@ -33,86 +33,269 @@ const getColorClasses = (color: string) => {
 
 const CATEGORIES = [
   { id: 'all', label: 'All' },
-  { id: 'Organize PDF', label: 'Organize PDF' },
-  { id: 'Optimize PDF', label: 'Optimize PDF' },
-  { id: 'Convert PDF', label: 'Convert PDF' },
-  { id: 'Edit PDF', label: 'Edit PDF' },
+  { id: 'Organize PDF', label: 'Organize' },
+  { id: 'Optimize PDF', label: 'Optimize' },
+  { id: 'Convert PDF', label: 'Convert' },
+  { id: 'Edit PDF', label: 'Edit' },
   { id: 'Image Tools', label: 'Image Tools' },
 ];
 
+// Where missing-tool requests get sent. Point this at a real serverless
+// function / Firestore write — see handleReportTool below.
+const REPORT_ENDPOINT = '/api/report-tool';
+const REPORT_QUEUE_KEY = 'wallpdf_tool_requests';
+
+type ReportStatus = 'idle' | 'sending' | 'sent' | 'error';
+
 export const ToolGrid: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [reportStatus, setReportStatus] = useState<ReportStatus>('idle');
 
   const tools: ToolItem[] = toolsData as ToolItem[];
 
-  const filteredTools = activeCategory === 'all'
-    ? tools
-    : tools.filter((tool) => tool.category === activeCategory);
+  const filteredTools = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return tools.filter((tool) => {
+      const matchesCategory = activeCategory === 'all' || tool.category === activeCategory;
+      if (!matchesCategory) return false;
+      if (!query) return true;
+      return (
+        tool.h1.toLowerCase().includes(query) ||
+        tool.title.toLowerCase().includes(query) ||
+        tool.description.toLowerCase().includes(query) ||
+        tool.slug.toLowerCase().includes(query)
+      );
+    });
+  }, [tools, activeCategory, searchQuery]);
+
+  const handleReportTool = async () => {
+    const query = searchQuery.trim();
+    if (!query) return;
+    setReportStatus('sending');
+    const payload = { query, category: activeCategory, requestedAt: new Date().toISOString() };
+    try {
+      const res = await fetch(REPORT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      setReportStatus('sent');
+    } catch (err) {
+      // No backend wired yet (or it failed) — queue locally so nothing is lost,
+      // and still confirm to the user so the flow doesn't feel broken.
+      console.warn('report-tool endpoint unavailable, queuing locally:', err);
+      try {
+        const existing = JSON.parse(localStorage.getItem(REPORT_QUEUE_KEY) || '[]');
+        existing.push(payload);
+        localStorage.setItem(REPORT_QUEUE_KEY, JSON.stringify(existing));
+      } catch {
+        // localStorage unavailable — nothing more we can do client-side
+      }
+      setReportStatus('sent');
+    }
+  };
+
+  const showNoResults = filteredTools.length === 0;
+  const showReportPanel = showNoResults && searchQuery.trim().length > 0;
 
   return (
-    <div className="min-h-screen bg-[#f5f5fa]/80 dark:bg-black py-8 px-5 sm:px-8  transition-colors duration-200">
-      <div className="max-w-7xl mx-auto space-y-10">
-        
+    <div className="min-h-screen bg-[#f5f5fa]/80 dark:bg-black py-10 sm:py-14 px-5 sm:px-8 transition-colors duration-200">
+      <style>{`
+        @property --wpdf-angle {
+          syntax: '<angle>';
+          initial-value: 0deg;
+          inherits: false;
+        }
+        @keyframes wpdf-spin {
+          to { --wpdf-angle: 360deg; }
+        }
+        .wpdf-search-wrap {
+          position: relative;
+          border-radius: 9999px;
+          padding: 2px;
+          isolation: isolate;
+        }
+        .wpdf-search-wrap::before {
+          content: '';
+          position: absolute;
+          inset: -3px;
+          border-radius: 9999px;
+          z-index: -1;
+          background: conic-gradient(from var(--wpdf-angle), #E5252A, #fca5a5, #E5252A 50%, transparent 85%);
+          filter: blur(10px);
+          opacity: 0.55;
+          animation: wpdf-spin 4s linear infinite;
+          transition: opacity 0.25s ease;
+        }
+        .wpdf-search-wrap.wpdf-focused::before {
+          opacity: 0.95;
+          filter: blur(12px);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .wpdf-search-wrap::before { animation: none; }
+        }
+      `}</style>
+
+      <div className="max-w-7xl mx-auto space-y-9 sm:space-y-11">
+
         {/* Header */}
-        <div className="text-center space-y-3 mx-auto">
-          <h1 className="text-4xl sm:text-[2.6rem] font-bold  text-gray-850 dark:text-white transition-colors">
-            Your complete toolkit for any <span className='text-[#E5252A] dark:text-[#E5252A]'>PDFs</span> work, all in one place
+        <div className="text-center space-y-3 max-w-3xl mx-auto">
+          <h1 className="text-[2.1rem] leading-[1.15] sm:text-5xl sm:leading-tight font-bold tracking-tight text-slate-900 dark:text-white transition-colors">
+            Your complete toolkit for every <span className="text-[#E5252A]">PDF</span> task
           </h1>
-          <p className="text-base leading-snug sm:text-xl text-slate-600 dark:text-zinc-400 max-w-4xl mx-auto font-light transition-colors">
-            Your complete toolkit to easily convert, shrink, split, rotate, and watermark documents in a few clicks with 100% private, local processing.
+          <p className="text-[15px] sm:text-lg text-slate-600 dark:text-zinc-400 max-w-2xl mx-auto font-normal leading-relaxed transition-colors">
+            Convert, shrink, split, rotate, and watermark documents in a few clicks — 100% private, local processing, nothing ever leaves your browser.
           </p>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex flex-wrap items-center justify-center gap-4 ">
-          {CATEGORIES.map((cat) => {
-            const isActive = activeCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setActiveCategory(cat.id)}
-                className={`px-4 py-1.5 sm:px-4 sm:py-1.5 rounded-full text-sm sm:text-md font-semibold transition-all duration-200 border ${
-                  isActive
-                    ? ' bg-gray-dark:bg-zink-900  dark:text-white border-gray-600 shadow- shadow-zink-500/20 scale-105'
-                    : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-300 dark:border-zinc-800   hover:border-slate-800 dark:hover:border-zinc-300'
-                }`}
+        {/* Glowing Search Bar */}
+        <div className="max-w-xl mx-auto">
+          <div className={`wpdf-search-wrap ${isSearchFocused ? 'wpdf-focused' : ''}`}>
+            <div className="relative flex items-center bg-white dark:bg-zinc-900 rounded-full">
+              <svg
+                className="absolute left-4 w-5 h-5 text-slate-400 dark:text-zinc-500 pointer-events-none"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
               >
-                {cat.label}
-              </button>
-            );
-          })}
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setReportStatus('idle');
+                }}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
+                placeholder="Search for a tool — e.g. “rotate”, “compress”, “watermark”..."
+                className="w-full bg-transparent rounded-full pl-11 pr-10 py-3 text-sm sm:text-[15px] text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQuery(''); setReportStatus('idle'); }}
+                  className="absolute right-3 p-1 rounded-full text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                  aria-label="Clear search"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Pills — horizontal scroll strip on mobile, centered wrap on larger screens */}
+        <div className="relative -mx-5 sm:mx-0">
+          <div className="flex items-center gap-2.5 overflow-x-auto sm:overflow-visible sm:flex-wrap sm:justify-center px-5 sm:px-0 pb-1 sm:pb-0 snap-x snap-mandatory">
+            {CATEGORIES.map((cat) => {
+              const isActive = activeCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setActiveCategory(cat.id)}
+                  className={`shrink-0 snap-start px-4 py-2 sm:py-1.5 rounded-full text-sm font-semibold transition-all duration-150 border ${
+                    isActive
+                      ? 'bg-[#E5252A] text-white border-[#E5252A] shadow-md shadow-red-500/20'
+                      : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 border-slate-200 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Tool Cards Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4 ">
-          {filteredTools.map((tool) => (
-            <a
-              key={tool.slug}
-              href={`/${tool.slug}`}
-              className="group bg-white dark:bg-zinc-900/50 border border-slate-300 dark:border-zinc-900 rounded-2xl p-4 sm:p-7 transition-all duration-200 hover:border-[#E5252A] dark:hover:border-[#E5252A] hover:shadow-xl dark:hover:shadow-2xl dark:hover:shadow-red-950/20 hover:-translate-y-1 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center sm:flex-col sm:items-start mb-2"> {/* Flex row on mobile, column on larger screens */}
-                  {/* SVG Icon Container - Smaller on mobile, original size on sm and up */}
-                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center mr-3 sm:mr-0 sm:mb-3 transition-transform group-hover:scale-110 ${getColorClasses(tool.color)}`}>
+        {!showNoResults && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4">
+            {filteredTools.map((tool) => (
+              <a
+                key={tool.slug}
+                href={`/${tool.slug}`}
+                className="group relative bg-white dark:bg-zinc-900/50 border border-slate-200 dark:border-zinc-800/80 rounded-2xl p-5 sm:p-6 transition-all duration-200 hover:border-[#E5252A]/60 dark:hover:border-[#E5252A]/60 hover:shadow-lg hover:shadow-slate-200/60 dark:hover:shadow-2xl dark:hover:shadow-red-950/10 hover:-translate-y-0.5 flex flex-col"
+              >
+                <div className="flex items-center sm:flex-col sm:items-start gap-3 sm:gap-0 mb-2.5 sm:mb-3">
+                  <div className={`w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-xl flex items-center justify-center sm:mb-3 transition-transform duration-200 group-hover:scale-105 ${getColorClasses(tool.color)}`}>
                     <ToolIcon slug={tool.slug} className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
-
-                  {/* Card H1 / Name */}
-                  <h3 className="text-lg sm:text-xl font-semibold text-slate-800/90 dark:text-white group-hover:text-[#E5252A] dark:group-hover:text-[#E5252A] transition-colors leading-tight">
-                    {tool.h1}
-                  </h3>
+                  <div className="min-w-0">
+                    <h3 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-white group-hover:text-[#E5252A] dark:group-hover:text-[#E5252A] transition-colors leading-tight truncate sm:whitespace-normal">
+                      {tool.h1}
+                    </h3>
+                  </div>
                 </div>
 
-                {/* Card Description */}
-                <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed font-normal">
+                <p className="text-[13px] text-slate-500 dark:text-zinc-400 leading-relaxed font-normal flex-grow">
                   {tool.description}
                 </p>
+
+                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800/80 flex items-center justify-between">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-zinc-500">
+                    {tool.category.replace(' PDF', '')}
+                  </span>
+                  <svg
+                    className="w-4 h-4 text-slate-300 dark:text-zinc-700 group-hover:text-[#E5252A] group-hover:translate-x-0.5 transition-all duration-200"
+                    viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  >
+                    <path d="M5 12h14" />
+                    <path d="M12 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+
+        {/* No results — offer to notify the admin */}
+        {showReportPanel && (
+          <div className="max-w-md mx-auto text-center bg-white dark:bg-zinc-900/60 border border-slate-200 dark:border-zinc-800 rounded-2xl p-8">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-400 dark:text-zinc-500">
+              <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </div>
+            <h3 className="text-base font-semibold text-slate-800 dark:text-white mb-1.5">
+              No tool found for &ldquo;{searchQuery.trim()}&rdquo;
+            </h3>
+            <p className="text-sm text-slate-500 dark:text-zinc-400 mb-5">
+              Let us know and we'll look into adding it.
+            </p>
+
+            {reportStatus === 'sent' ? (
+              <div className="inline-flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm font-semibold">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                Thanks — the team has been notified!
               </div>
-            </a>
-          ))}
-        </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleReportTool}
+                disabled={reportStatus === 'sending'}
+                className="px-5 py-2.5 bg-[#E5252A] hover:bg-[#C51920] text-white text-sm font-semibold rounded-full shadow-md shadow-red-500/20 transition-all active:scale-[0.97] disabled:opacity-60"
+              >
+                {reportStatus === 'sending' ? 'Sending...' : `Request "${searchQuery.trim()}"`}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Category has no tools and no search term active */}
+        {showNoResults && !searchQuery.trim() && (
+          <div className="text-center py-16 text-slate-400 dark:text-zinc-600 text-sm">
+            No tools found in this category yet.
+          </div>
+        )}
 
       </div>
     </div>

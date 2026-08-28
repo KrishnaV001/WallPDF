@@ -82,7 +82,7 @@ export const Header: React.FC = () => {
             <img src="/wallpdf-logo(1).svg"
               alt="WallPDF"
               className=" w-10 h-10 sm:w-12 sm:h-12 group-hover:scale-105 transition-transform"/>
-              <span className="font-bol text-2xl text-slate-900 dark:text-white">
+              <span className="font-bold text-2xl text-slate-900 dark:text-white">
                WallPDF
               </span>
           </a>
