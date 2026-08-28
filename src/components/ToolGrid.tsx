@@ -191,7 +191,7 @@ export const ToolGrid: React.FC = () => {
         </div>
 
         {/* Filter Pills — horizontal scroll strip on mobile, centered wrap on larger screens */}
-        <div className="relative ml-3 sm:ml-0">
+        <div className="relative">
           <div className="flex items-center gap-2.5 overflow-x-auto sm:overflow-visible sm:flex-wrap sm:justify-center px-5 sm:px-0 pb-1 sm:pb-0 snap-x snap-mandatory">
             {CATEGORIES.map((cat) => {
               const isActive = activeCategory === cat.id;
