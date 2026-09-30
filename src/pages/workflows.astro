@@ -1,0 +1,11 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { WorkflowBuilder } from '../components/workflows/WorkflowBuilder';
+---
+
+<BaseLayout
+  title="Workflows — WallPDF"
+  description="Chain rotate, watermark, page numbers, and compress into a single automated pass over your PDF."
+>
+  <WorkflowBuilder client:only="react" />
+</BaseLayout>

@@ -1,5 +1,6 @@
 import { initializeApp, getApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence, type Auth } from 'firebase/auth';
+import { getFirestore, type Firestore } from 'firebase/firestore';
  const firebaseConfig = {
   apiKey: import.meta.env.PUBLIC_FIREBASE_API_KEY,
   authDomain: import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -28,6 +29,18 @@ try {
   auth = null;
 }
 
+// Firestore backs the "plan" scaffolding (src/lib/plan) and saved workflows
+// (src/lib/workflows/storage.ts). It's a separate service instance from
+// Auth, so it gets its own defensive try/catch rather than assuming `app`
+// initializing successfully guarantees Firestore does too.
+let db: Firestore | null = null;
+try {
+  db = app ? getFirestore(app) : null;
+} catch (e) {
+  console.error('Firestore initialization error', e);
+  db = null;
+}
+
 // Explicitly pin persistence to IndexedDB-backed local storage.
 // Without this, the SDK has to resolve which persistence backend to use
 // on first access, which can race with an in-flight setCurrentUser write
@@ -49,8 +62,9 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     auth = null;
     app = null;
+    db = null;
   });
 }
 
-export { auth };
+export { auth, db };
 export default app;

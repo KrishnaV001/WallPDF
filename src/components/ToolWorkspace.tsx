@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ToolIcon } from './ToolIcon';
 import { PdfCropEditor } from './PdfCropEditor';
  import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs for merged pages
-import { PDFDocument, PDFDict, PDFName, PDFNumber, PDFRawStream, decodePDFRawStream, PDFPage, rgb, degrees, StandardFonts } from 'pdf-lib'; 
+import { PDFDocument, PDFPage, rgb, degrees, StandardFonts } from 'pdf-lib'; 
 import * as pdfjsLib from 'pdfjs-dist';
 import JSZip from 'jszip';
 import {
@@ -16,6 +16,23 @@ import {
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities'; // Keep this line as it's part of the selection
 import { PdfPreview } from './PdfPreview'; // Import the dedicated PdfPreview component
+import { UpgradeModal } from './UpgradeModal';
+import { mergePdfs } from '../lib/pdf-operations/mergePdf';
+import { splitPdf } from '../lib/pdf-operations/splitPdf';
+import { rotatePdf } from '../lib/pdf-operations/rotatePdf';
+import { watermarkPdf } from '../lib/pdf-operations/watermarkPdf';
+import { addPageNumbers } from '../lib/pdf-operations/addPageNumbers';
+import { compressPdf } from '../lib/pdf-operations/compressPdf';
+import { runBatch } from '../lib/batch';
+import { usePlan } from '../lib/plan/usePlan';
+import { checkBatchAllowed } from '../lib/plan/gating';
+import type { ChainableOperationSlug } from '../lib/pdf-operations/types';
+
+// The four tools that are pure "one PDF in, one PDF out" transforms can run
+// in batch mode across multiple files (see src/lib/batch.ts). merge-pdf and
+// split-pdf keep their existing multi-file/page-subset semantics instead -
+// see the comment in src/lib/pdf-operations/registry.ts for why.
+const BATCHABLE_TOOLS: ChainableOperationSlug[] = ['rotate-pdf', 'watermark-pdf', 'add-page-numbers', 'compress-pdf'];
 
 interface PdfToImagePreview {
   pageNumber: number;
@@ -191,6 +208,29 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [pdfToImagePreviews, setPdfToImagePreviews] = useState<PdfToImagePreview[]>([]);
   const [selectedImagePages, setSelectedImagePages] = useState<Set<number>>(new Set());
+  // --- rotate-pdf tool state ---
+  const [pageRotations, setPageRotations] = useState<Record<number, 0 | 90 | 180 | 270>>({});
+  // --- watermark-pdf tool state ---
+  const [watermarkText, setWatermarkText] = useState('CONFIDENTIAL');
+  const [watermarkFontSize, setWatermarkFontSize] = useState(48);
+  const [watermarkOpacity, setWatermarkOpacity] = useState(0.3);
+  const [watermarkRotationDeg, setWatermarkRotationDeg] = useState(45);
+  const [watermarkColor, setWatermarkColor] = useState('#E5252A');
+  const [watermarkLayout, setWatermarkLayout] = useState<'center' | 'tile'>('center');
+  // --- add-page-numbers tool state ---
+  const [pageNumberPosition, setPageNumberPosition] = useState<
+    'bottom-center' | 'bottom-left' | 'bottom-right' | 'top-center' | 'top-left' | 'top-right'
+  >('bottom-center');
+  const [pageNumberStart, setPageNumberStart] = useState(1);
+  const [pageNumberFormat, setPageNumberFormat] = useState<'number' | 'number-of-total'>('number');
+  const [pageNumberFontSize, setPageNumberFontSize] = useState(12);
+  // --- batch mode (rotate/watermark/add-page-numbers/compress) ---
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [batchRotateAngle, setBatchRotateAngle] = useState<90 | 180 | 270>(90);
+  const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [batchResultSummary, setBatchResultSummary] = useState<{ count: number; failedCount: number; isZip: boolean } | null>(null);
+  const [upgradeMessage, setUpgradeMessage] = useState<string | null>(null);
+  const { plan } = usePlan();
   const [isFileListOpen, setIsFileListOpen] = useState(true);
   const pdfDocuments = useRef<Map<File, PDFDocument>>(new Map()); // Cache loaded PDF documents
   const cropDataRef = useRef<{
@@ -537,6 +577,18 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     } else if (toolSlug === 'split-pdf' && files.length !== 1) {
       setPdfToImagePreviews([]);
       setSelectedImagePages(new Set());
+    } else if (toolSlug === 'rotate-pdf' && files.length === 1) {
+      setPageRotations({});
+      const controller = new AbortController();
+      fileProcessingController.current = controller;
+      generatePagePreviews(files[0], controller.signal, setPdfToImagePreviews, setSelectedImagePages);
+      return () => {
+        controller.abort();
+      };
+    } else if (toolSlug === 'rotate-pdf' && files.length !== 1) {
+      setPdfToImagePreviews([]);
+      setSelectedImagePages(new Set());
+      setPageRotations({});
     }
   }, [files, toolSlug, generatePagePreviews]);
 
@@ -618,6 +670,26 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     });
   };
 
+  // --- rotate-pdf: per-page and "rotate all" handlers ---
+  const handleRotatePageBy = (pageNumber: number, delta: 90 | -90) => {
+    setPageRotations((prev) => {
+      const current = prev[pageNumber] ?? 0;
+      const next = ((((current + delta) % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+      return { ...prev, [pageNumber]: next };
+    });
+  };
+
+  const handleRotateAllBy = (delta: 90 | -90) => {
+    setPageRotations((prev) => {
+      const next: Record<number, 0 | 90 | 180 | 270> = { ...prev };
+      pdfToImagePreviews.forEach((p) => {
+        const current = prev[p.pageNumber] ?? 0;
+        next[p.pageNumber] = ((((current + delta) % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+      });
+      return next;
+    });
+  };
+
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
@@ -640,7 +712,11 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       const controller = new AbortController();
       fileProcessingController.current = controller;
 
-      if (['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf', 'edit-pdf'].includes(toolSlug)) {
+      const isSingleFileTool =
+        ['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf', 'edit-pdf', 'rotate-pdf', 'watermark-pdf', 'add-page-numbers'].includes(toolSlug) &&
+        !(isBatchMode && (BATCHABLE_TOOLS as string[]).includes(toolSlug));
+
+      if (isSingleFileTool) {
         // Tools that only support one file at a time.
         const firstFile = newFiles[0];
         setFiles(firstFile ? [firstFile] : []);
@@ -658,7 +734,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       setCompressedFile(null);
       setCompressedImageResults((prev) => { prev.forEach((r) => URL.revokeObjectURL(r.blobUrl)); return []; });
     }
-  }, [toolSlug, loadFirstPageForCropPreview, generatePagePreviews]);
+  }, [toolSlug, loadFirstPageForCropPreview, generatePagePreviews, isBatchMode]);
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     // If there's an ongoing process, abort it before starting a new one.
@@ -674,7 +750,11 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       );
       console.log('[ToolWorkspace] input files:', newFiles.map((f) => f.name));
 
-      if (['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf', 'edit-pdf'].includes(toolSlug)) {
+      const isSingleFileTool =
+        ['split-pdf', 'compress-pdf', 'pdf-to-word', 'pdf-to-powerpoint', 'pdf-to-excel', 'word-to-pdf', 'crop-pdf', 'edit-pdf', 'rotate-pdf', 'watermark-pdf', 'add-page-numbers'].includes(toolSlug) &&
+        !(isBatchMode && (BATCHABLE_TOOLS as string[]).includes(toolSlug));
+
+      if (isSingleFileTool) {
         // Tools that only support one file at a time.
         const firstFile = newFiles[0];
         setFiles(firstFile ? [firstFile] : []);
@@ -756,6 +836,25 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     compressedImageResults.forEach((r) => URL.revokeObjectURL(r.blobUrl));
     setCompressedImageResults([]);
     setTargetSizeKb('');
+    // rotate-pdf reset
+    setPageRotations({});
+    // batch mode resets
+    setIsBatchMode(false);
+    setBatchRotateAngle(90);
+    setBatchProgress(null);
+    setBatchResultSummary(null);
+    // watermark-pdf resets
+    setWatermarkText('CONFIDENTIAL');
+    setWatermarkFontSize(48);
+    setWatermarkOpacity(0.3);
+    setWatermarkRotationDeg(45);
+    setWatermarkColor('#E5252A');
+    setWatermarkLayout('center');
+    // add-page-numbers resets
+    setPageNumberPosition('bottom-center');
+    setPageNumberStart(1);
+    setPageNumberFormat('number');
+    setPageNumberFontSize(12);
   };
 
   const handleDragEnd = (event: any) => {
@@ -949,6 +1048,8 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     if (files.length === 0) return;
 
     setIsProcessing(true);
+    setBatchProgress(null);
+    setBatchResultSummary(null);
     setProgress(0);
     console.log('[ToolWorkspace] start processing', files.map(f => f.name));
 
@@ -956,349 +1057,66 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
       if (toolSlug === 'merge-pdf') {
         if (files.length === 0) return;
 
-        const mergedPdf = await PDFDocument.create();
-        let processedCount = 0;
-        for (const file of files) {
-          const pdfBytes = await file.arrayBuffer();
-          const sourcePdf = await PDFDocument.load(pdfBytes);
-          const copiedPages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-          copiedPages.forEach((page) => {
-            mergedPdf.addPage(page);
-          });
-          processedCount++;
-          // Use files.length for progress calculation
-          setProgress(Math.round((processedCount / files.length) * 100));
-        }
-
-        const mergedPdfBytes = await mergedPdf.save();
-        const pdfBuffer = mergedPdfBytes.buffer.slice(
-          mergedPdfBytes.byteOffset,
-          mergedPdfBytes.byteOffset + mergedPdfBytes.byteLength
+        const fileBytesList = await Promise.all(files.map((f) => f.arrayBuffer().then((buf) => new Uint8Array(buf))));
+        const mergedBytes = await mergePdfs(fileBytesList, (pct) => setProgress(pct));
+        const mergedBuffer = mergedBytes.buffer.slice(
+          mergedBytes.byteOffset,
+          mergedBytes.byteOffset + mergedBytes.byteLength
         ) as ArrayBuffer;
-        const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
-        setDownloadUrl(URL.createObjectURL(blob));
+        setDownloadUrl(URL.createObjectURL(new Blob([mergedBuffer], { type: 'application/pdf' })));
         setIsCompleted(true);
       } else if (toolSlug === 'split-pdf') {
         if (files.length === 0) return;
 
-        const pdfToSplit = files[0];
-        setProgress(25); // Stage 1: Reading file
-        const pdfBytes = await pdfToSplit.arrayBuffer();
-        
-        setProgress(50); // Stage 2: Loading PDF
-        const sourcePdfDoc = await PDFDocument.load(pdfBytes);
+        const pageNumbers = Array.from(selectedImagePages).sort((a, b) => a - b);
+        if (pageNumbers.length === 0) return; // Don't process if no pages are selected
 
-        // Use selected pages from the visual picker
-        const indicesToCopy = Array.from(selectedImagePages).map(p => p - 1).sort((a, b) => a - b);
+        setProgress(25);
+        const pdfBytes = new Uint8Array(await files[0].arrayBuffer());
 
-        if (indicesToCopy.length === 0) return; // Don't process if no pages are selected
-
-        const newPdfDoc = await PDFDocument.create();
-
-        // Copy the selected pages into the new document
-        const copiedPages = await newPdfDoc.copyPages(sourcePdfDoc, indicesToCopy);
-        copiedPages.forEach((page) => newPdfDoc.addPage(page));
-
-        const newPdfBytes = await newPdfDoc.save();
+        setProgress(50);
+        const newPdfBytes = await splitPdf(pdfBytes, { pageNumbers });
         const pdfBuffer = newPdfBytes.buffer.slice(
           newPdfBytes.byteOffset,
           newPdfBytes.byteOffset + newPdfBytes.byteLength
         ) as ArrayBuffer;
-        const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
-        setDownloadUrl(URL.createObjectURL(blob));
+        setDownloadUrl(URL.createObjectURL(new Blob([pdfBuffer], { type: 'application/pdf' })));
+        setProgress(100);
         setIsCompleted(true);
       } else if (toolSlug === 'compress-pdf') {
         if (files.length === 0) return;
+
+        const targetSizeKbNum = targetSizeKb && !isNaN(parseFloat(targetSizeKb)) ? parseFloat(targetSizeKb) : null;
+
+        if (isBatchMode && files.length > 1) {
+          const gate = checkBatchAllowed(plan, files.length);
+          if (!gate.allowed) {
+            setUpgradeMessage(gate.message ?? 'Upgrade to batch-process more files at once.');
+            return;
+          }
+          setBatchProgress({ completed: 0, total: files.length });
+          const batchResult = await runBatch(files, 'compress-pdf', { targetSizeKb: targetSizeKbNum }, (completed, total) => {
+            setBatchProgress({ completed, total });
+            setProgress(Math.round((completed / total) * 100));
+          });
+          setDownloadUrl(URL.createObjectURL(batchResult.downloadBlob));
+          setBatchResultSummary({ count: batchResult.results.length, failedCount: batchResult.failedCount, isZip: batchResult.downloadIsZip });
+          setProgress(100);
+          setIsCompleted(true);
+          return;
+        }
 
         const pdfToCompress = files[0];
         setOriginalFileSize(pdfToCompress.size);
         setCompressionNote(null);
 
-        setProgress(10); // Stage 1: Reading file
-        const pdfBytes = await pdfToCompress.arrayBuffer();
-
-        setProgress(20); // Stage 2: Loading PDF
-        const pdfDoc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
-
-        // Resolves a PDF /ColorSpace entry down to a simple kind + component
-        // count. Handles the common /ICCBased case (an indirect reference to
-        // a stream whose /N entry says how many components it has) - most
-        // real-world camera/scanner JPEGs use ICCBased (embedded sRGB/Gray
-        // profile) rather than plain /DeviceRGB, so this matters a lot.
-        const resolveColorSpace = (csObj: any): { kind: 'gray' | 'rgb' | 'cmyk' | 'other'; components: number | null } => {
-          if (csObj instanceof PDFName) {
-            const n = csObj.asString();
-            if (n === '/DeviceGray' || n === '/CalGray') return { kind: 'gray', components: 1 };
-            if (n === '/DeviceRGB' || n === '/CalRGB' || n === '/Lab') return { kind: 'rgb', components: 3 };
-            if (n === '/DeviceCMYK') return { kind: 'cmyk', components: 4 };
-            return { kind: 'other', components: null };
-          }
-          try {
-            const arr = csObj as { lookup: (i: number, t?: any) => any; size: () => number };
-            if (arr && typeof arr.lookup === 'function' && arr.size() > 0) {
-              const head = arr.lookup(0, PDFName);
-              const headStr = head instanceof PDFName ? head.asString() : null;
-              if (headStr === '/ICCBased') {
-                const streamObj = arr.lookup(1);
-                const nEntry = streamObj?.dict?.get?.(PDFName.of('N'));
-                const n = nEntry instanceof PDFNumber ? nEntry.asNumber() : null;
-                if (n === 1) return { kind: 'gray', components: 1 };
-                if (n === 3) return { kind: 'rgb', components: 3 };
-                if (n === 4) return { kind: 'cmyk', components: 4 };
-                return { kind: 'other', components: null };
-              }
-              if (headStr === '/CalRGB') return { kind: 'rgb', components: 3 };
-              if (headStr === '/CalGray') return { kind: 'gray', components: 1 };
-              return { kind: 'other', components: null }; // Indexed, Separation, DeviceN, etc.
-            }
-          } catch {
-            // fall through
-          }
-          return { kind: 'other', components: null };
-        };
-
-        type ImageCandidate = {
-          ref: ReturnType<typeof pdfDoc.context.enumerateIndirectObjects>[number][0];
-          dict: PDFDict;
-          kind: 'jpeg' | 'raster';
-          originalSize: number; // bytes this image currently occupies in the file
-          getImageData: () => Promise<{ width: number; height: number; blob: Blob }>;
-        };
-
-        const indirectObjects = pdfDoc.context.enumerateIndirectObjects();
-        const imageCandidates: ImageCandidate[] = [];
-        let totalImageObjects = 0;
-        let skippedUnsupported = 0;
-        const skipReasons: Record<string, number> = {}; // e.g. "filter:/CCITTFaxDecode" -> count
-
-        const recordSkip = (reason: string) => {
-          skippedUnsupported++;
-          skipReasons[reason] = (skipReasons[reason] || 0) + 1;
-        };
-
-        for (const [ref, object] of indirectObjects) {
-          if (!(object instanceof PDFRawStream)) continue;
-          const dict = object.dict;
-
-          const subtype = dict.get(PDFName.of('Subtype'));
-          if (!(subtype instanceof PDFName) || subtype.asString() !== '/Image') continue;
-          totalImageObjects++;
-
-          const bpc = dict.get(PDFName.of('BitsPerComponent'));
-          if (bpc instanceof PDFNumber && bpc.asNumber() !== 8) { recordSkip('bit-depth'); continue; }
-
-          const filter = dict.get(PDFName.of('Filter'));
-          const filterName = filter instanceof PDFName ? filter.asString() : null;
-          const colorSpaceRaw = dict.get(PDFName.of('ColorSpace'));
-          const colorInfo = resolveColorSpace(colorSpaceRaw);
-
-          // Skip images with an alpha channel - flattening to JPEG would lose transparency.
-          if (dict.has(PDFName.of('SMask')) || dict.has(PDFName.of('Mask'))) { recordSkip('transparency'); continue; }
-          if (dict.has(PDFName.of('Decode'))) { recordSkip('custom-decode-array'); continue; } // non-standard value mapping
-
-          if (filterName === '/DCTDecode') {
-            // The browser's own JPEG decoder reads color info straight out of
-            // the JPEG bytes (JFIF/Adobe markers), independent of what the
-            // PDF's /ColorSpace dict entry says - so we only need to rule out
-            // CMYK JPEGs here (Adobe's inverted-CMYK JPEGs render wrong via
-            // canvas). Everything else - DeviceRGB, DeviceGray, and the very
-            // common ICCBased (embedded sRGB/Gray profile) - is safe to try.
-            if (colorInfo.kind === 'cmyk') { recordSkip('cmyk-jpeg'); continue; }
-
-            // Raw contents of a /DCTDecode stream ARE the JPEG bytes already.
-            const jpegBytes = object.getContents();
-            imageCandidates.push({
-              ref,
-              dict,
-              kind: 'jpeg',
-              originalSize: object.getContentsSize(),
-              getImageData: async () => {
-                const buf = jpegBytes.buffer.slice(jpegBytes.byteOffset, jpegBytes.byteOffset + jpegBytes.byteLength) as ArrayBuffer;
-                const blob = new Blob([buf], { type: 'image/jpeg' });
-                const bitmap = await createImageBitmap(blob);
-                return { width: bitmap.width, height: bitmap.height, blob };
-              },
-            });
-          } else if (filterName === '/FlateDecode' || filterName === null) {
-            // We're reconstructing raw pixels by hand here, so unlike the JPEG
-            // case above we DO need to know the exact component layout -
-            // only proceed for plain/ICCBased gray or RGB.
-            if (colorInfo.kind !== 'gray' && colorInfo.kind !== 'rgb') { recordSkip(`raster-colorspace:${colorInfo.kind}`); continue; }
-            const comps = colorInfo.components as 1 | 3;
-
-            // Likely a raw (uncompressed-pixel) bitmap, Flate-compressed for storage.
-            // Common for images pasted via Word/Google Docs exports.
-            const width = dict.get(PDFName.of('Width'));
-            const height = dict.get(PDFName.of('Height'));
-            if (!(width instanceof PDFNumber) || !(height instanceof PDFNumber)) { recordSkip('missing-dimensions'); continue; }
-            const w = width.asNumber();
-            const h = height.asNumber();
-
-            imageCandidates.push({
-              ref,
-              dict,
-              kind: 'raster',
-              originalSize: object.getContentsSize(),
-              getImageData: async () => {
-                const decoded = decodePDFRawStream(object).decode();
-                const expectedLength = w * h * comps;
-                if (decoded.length < expectedLength) {
-                  throw new Error(`unexpected raw image data size (got ${decoded.length}, expected ${expectedLength})`);
-                }
-                const rgba = new Uint8ClampedArray(w * h * 4);
-                for (let p = 0; p < w * h; p++) {
-                  if (comps === 3) {
-                    rgba[p * 4] = decoded[p * 3];
-                    rgba[p * 4 + 1] = decoded[p * 3 + 1];
-                    rgba[p * 4 + 2] = decoded[p * 3 + 2];
-                  } else {
-                    const gray = decoded[p];
-                    rgba[p * 4] = gray;
-                    rgba[p * 4 + 1] = gray;
-                    rgba[p * 4 + 2] = gray;
-                  }
-                  rgba[p * 4 + 3] = 255;
-                }
-                const canvas = document.createElement('canvas');
-                canvas.width = w;
-                canvas.height = h;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) throw new Error('no 2d context');
-                ctx.putImageData(new ImageData(rgba, w, h), 0, 0);
-                const blob: Blob = await new Promise((resolve, reject) => {
-                  canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))), 'image/png');
-                });
-                return { width: w, height: h, blob };
-              },
-            });
-          } else {
-            recordSkip(`filter:${filterName ?? 'unknown'}`); // e.g. CCITTFaxDecode, JBIG2Decode, JPXDecode - scanned docs, not handled yet
-          }
-        }
-
-        console.info(
-          `[compress-pdf] ${totalImageObjects} image object(s) found, ${imageCandidates.length} eligible for recompression, ${skippedUnsupported} skipped.`,
-          skipReasons
+        const pdfBytes = new Uint8Array(await pdfToCompress.arrayBuffer());
+        const { bytes: compressedBytes, note } = await compressPdf(
+          pdfBytes,
+          { targetSizeKb: targetSizeKbNum },
+          (pct) => setProgress(pct)
         );
-
-        setProgress(30);
-
-        const targetBytes = targetSizeKb && !isNaN(parseFloat(targetSizeKb))
-          ? parseFloat(targetSizeKb) * 1024
-          : null;
-
-        let compressedBytes: Uint8Array | null = null;
-        let anyImageShrunk = false;
-
-        // Recompresses every candidate image at the given JPEG quality (always
-        // starting from the original pixel data, never compounding across
-        // calls) and returns the resulting saved PDF bytes.
-        const applyQualityPass = async (quality: number): Promise<Uint8Array> => {
-          for (let i = 0; i < imageCandidates.length; i++) {
-            const candidate = imageCandidates[i];
-            try {
-              const { width, height, blob: sourceBlob } = await candidate.getImageData();
-              const bitmap = await createImageBitmap(sourceBlob);
-
-              const canvas = document.createElement('canvas');
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext('2d');
-              if (!ctx) { bitmap.close(); continue; }
-              ctx.drawImage(bitmap, 0, 0);
-              bitmap.close();
-
-              const recompressedBlob: Blob = await new Promise((resolve, reject) => {
-                canvas.toBlob(
-                  (b) => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))),
-                  'image/jpeg',
-                  quality
-                );
-              });
-              const newBytes = new Uint8Array(await recompressedBlob.arrayBuffer());
-
-              // Only swap it in if we actually made it smaller.
-              if (newBytes.length < candidate.originalSize) {
-                const newDict = candidate.dict.clone(pdfDoc.context);
-                newDict.set(PDFName.of('Filter'), PDFName.of('DCTDecode'));
-                newDict.set(PDFName.of('ColorSpace'), PDFName.of('DeviceRGB'));
-                newDict.set(PDFName.of('BitsPerComponent'), PDFNumber.of(8));
-                newDict.set(PDFName.of('Length'), PDFNumber.of(newBytes.length));
-                newDict.delete(PDFName.of('DecodeParms'));
-                pdfDoc.context.assign(candidate.ref, PDFRawStream.of(newDict, newBytes));
-                anyImageShrunk = true;
-              }
-            } catch (imgErr) {
-              console.warn('[compress-pdf] skipped an image that failed to recompress', imgErr);
-            }
-
-            setProgress(30 + Math.round(((i + 1) / Math.max(imageCandidates.length, 1)) * 50));
-          }
-
-          return pdfDoc.save({ useObjectStreams: true });
-        };
-
-        if (!targetBytes) {
-          compressedBytes = await applyQualityPass(0.6);
-        } else {
-          // Binary-search the JPEG quality so the result lands close to the
-          // requested target size, instead of jumping through a few fixed
-          // quality steps and stopping at the first one that happens to be
-          // under the target (which tends to overshoot and compress more
-          // than necessary).
-          let low = 0.1;
-          let high = 0.85;
-          let bestUnderTarget: Uint8Array | null = null;
-          let smallestSeen: Uint8Array | null = null;
-          const maxIterations = 6;
-          const closeEnoughRatio = 0.97; // stop once within 3% of the target
-
-          for (let iter = 0; iter < maxIterations; iter++) {
-            const quality = (low + high) / 2;
-            const result = await applyQualityPass(quality);
-
-            if (!smallestSeen || result.length < smallestSeen.length) {
-              smallestSeen = result;
-            }
-
-            if (result.length <= targetBytes) {
-              bestUnderTarget = result;
-              if (result.length >= targetBytes * closeEnoughRatio) break;
-              low = quality; // under target with room to spare - try higher quality
-            } else {
-              high = quality; // still too big - compress harder
-            }
-          }
-
-          // Prefer the best result that fit under the target; fall back to
-          // the smallest one seen if we never got under it.
-          compressedBytes = bestUnderTarget ?? smallestSeen;
-        }
-
-        setProgress(90);
-
-        if (!compressedBytes) {
-          compressedBytes = await pdfDoc.save({ useObjectStreams: true });
-        }
-
-        if (imageCandidates.length === 0) {
-          if (totalImageObjects === 0) {
-            setCompressionNote(
-              "This PDF doesn't contain any embedded raster images, so there's very little left to compress - it's likely already close to its minimum size."
-            );
-          } else {
-            const topReason = Object.entries(skipReasons).sort((a, b) => b[1] - a[1])[0];
-            const scanFormats = ['filter:/CCITTFaxDecode', 'filter:/JBIG2Decode', 'filter:/JPXDecode'];
-            const looksLikeScan = topReason && scanFormats.includes(topReason[0]);
-            setCompressionNote(
-              looksLikeScan
-                ? `Found ${totalImageObjects} image(s), but they're stored in a scanned-document format (${topReason![0].replace('filter:', '')}) that this tool doesn't recompress yet - that's why the size didn't change.`
-                : `Found ${totalImageObjects} image(s), but none were in a format we can safely recompress right now (reasons: ${Object.entries(skipReasons).map(([k, v]) => `${k}=${v}`).join(', ')}).`
-            );
-          }
-        } else if (!anyImageShrunk) {
-          setCompressionNote('The images in this PDF were already efficiently compressed, so we kept the originals rather than making them larger.');
-        }
+        if (note) setCompressionNote(note);
 
         const compressedBuffer = compressedBytes.buffer.slice(
           compressedBytes.byteOffset,
@@ -1893,6 +1711,127 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
         setDownloadUrl(URL.createObjectURL(blob));
         setProgress(100);
         setIsCompleted(true);
+      } else if (toolSlug === 'rotate-pdf') {
+        if (files.length === 0) return;
+
+        if (isBatchMode && files.length > 1) {
+          const gate = checkBatchAllowed(plan, files.length);
+          if (!gate.allowed) {
+            setUpgradeMessage(gate.message ?? 'Upgrade to batch-process more files at once.');
+            return;
+          }
+          setBatchProgress({ completed: 0, total: files.length });
+          const batchResult = await runBatch(
+            files,
+            'rotate-pdf',
+            { uniformDelta: batchRotateAngle },
+            (completed, total) => {
+              setBatchProgress({ completed, total });
+              setProgress(Math.round((completed / total) * 100));
+            }
+          );
+          setDownloadUrl(URL.createObjectURL(batchResult.downloadBlob));
+          setBatchResultSummary({ count: batchResult.results.length, failedCount: batchResult.failedCount, isZip: batchResult.downloadIsZip });
+          setProgress(100);
+          setIsCompleted(true);
+          return;
+        }
+
+        const pdfToRotate = files[0];
+        setProgress(20);
+        const pdfBytes = new Uint8Array(await pdfToRotate.arrayBuffer());
+
+        setProgress(40);
+        const rotatedBytes = await rotatePdf(pdfBytes, { rotations: pageRotations });
+        const rotatedBuffer = rotatedBytes.buffer.slice(
+          rotatedBytes.byteOffset,
+          rotatedBytes.byteOffset + rotatedBytes.byteLength
+        ) as ArrayBuffer;
+        setDownloadUrl(URL.createObjectURL(new Blob([rotatedBuffer], { type: 'application/pdf' })));
+        setProgress(100);
+        setIsCompleted(true);
+      } else if (toolSlug === 'watermark-pdf') {
+        if (files.length === 0 || !watermarkText.trim()) return;
+
+        const watermarkOptions = {
+          text: watermarkText.trim(),
+          fontSize: watermarkFontSize,
+          opacity: watermarkOpacity,
+          rotationDeg: watermarkRotationDeg,
+          color: watermarkColor,
+          layout: watermarkLayout,
+        };
+
+        if (isBatchMode && files.length > 1) {
+          const gate = checkBatchAllowed(plan, files.length);
+          if (!gate.allowed) {
+            setUpgradeMessage(gate.message ?? 'Upgrade to batch-process more files at once.');
+            return;
+          }
+          setBatchProgress({ completed: 0, total: files.length });
+          const batchResult = await runBatch(files, 'watermark-pdf', watermarkOptions, (completed, total) => {
+            setBatchProgress({ completed, total });
+            setProgress(Math.round((completed / total) * 100));
+          });
+          setDownloadUrl(URL.createObjectURL(batchResult.downloadBlob));
+          setBatchResultSummary({ count: batchResult.results.length, failedCount: batchResult.failedCount, isZip: batchResult.downloadIsZip });
+          setProgress(100);
+          setIsCompleted(true);
+          return;
+        }
+
+        setProgress(15);
+        const pdfBytes = new Uint8Array(await files[0].arrayBuffer());
+
+        setProgress(30);
+        const watermarkedBytes = await watermarkPdf(pdfBytes, watermarkOptions);
+        const watermarkedBuffer = watermarkedBytes.buffer.slice(
+          watermarkedBytes.byteOffset,
+          watermarkedBytes.byteOffset + watermarkedBytes.byteLength
+        ) as ArrayBuffer;
+        setDownloadUrl(URL.createObjectURL(new Blob([watermarkedBuffer], { type: 'application/pdf' })));
+        setProgress(100);
+        setIsCompleted(true);
+      } else if (toolSlug === 'add-page-numbers') {
+        if (files.length === 0) return;
+
+        const pageNumberOptions = {
+          position: pageNumberPosition,
+          start: pageNumberStart,
+          format: pageNumberFormat,
+          fontSize: pageNumberFontSize,
+        };
+
+        if (isBatchMode && files.length > 1) {
+          const gate = checkBatchAllowed(plan, files.length);
+          if (!gate.allowed) {
+            setUpgradeMessage(gate.message ?? 'Upgrade to batch-process more files at once.');
+            return;
+          }
+          setBatchProgress({ completed: 0, total: files.length });
+          const batchResult = await runBatch(files, 'add-page-numbers', pageNumberOptions, (completed, total) => {
+            setBatchProgress({ completed, total });
+            setProgress(Math.round((completed / total) * 100));
+          });
+          setDownloadUrl(URL.createObjectURL(batchResult.downloadBlob));
+          setBatchResultSummary({ count: batchResult.results.length, failedCount: batchResult.failedCount, isZip: batchResult.downloadIsZip });
+          setProgress(100);
+          setIsCompleted(true);
+          return;
+        }
+
+        setProgress(15);
+        const pdfBytes = new Uint8Array(await files[0].arrayBuffer());
+
+        setProgress(30);
+        const numberedBytes = await addPageNumbers(pdfBytes, pageNumberOptions);
+        const numberedBuffer = numberedBytes.buffer.slice(
+          numberedBytes.byteOffset,
+          numberedBytes.byteOffset + numberedBytes.byteLength
+        ) as ArrayBuffer;
+        setDownloadUrl(URL.createObjectURL(new Blob([numberedBuffer], { type: 'application/pdf' })));
+        setProgress(100);
+        setIsCompleted(true);
       }
     } catch (err) {
       console.error('Error processing PDF:', err);
@@ -1933,6 +1872,25 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
               <p className="text-slate-500 dark:text-zinc-400 text-sm sm:text-base mb-8 max-w-lg font-normal">
                 {description}
               </p>
+
+              {(BATCHABLE_TOOLS as string[]).includes(toolSlug) && (
+                <div className="flex items-center gap-2 mb-6 bg-slate-100 dark:bg-zinc-800 rounded-full p-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setIsBatchMode(false); }}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${!isBatchMode ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-zinc-400'}`}
+                  >
+                    Single file
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setIsBatchMode(true); }}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${isBatchMode ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-zinc-400'}`}
+                  >
+                    Batch (multiple files)
+                  </button>
+                </div>
+              )}
 
               {/* Native Red Button */}
               <label className="cursor-pointer group relative inline-flex items-center justify-center w-full max-w-[280px] sm:max-w-[320px] bg-[#E5252A] hover:bg-[#C51920] active:scale-[0.98] text-white font-bold py-3 sm:py-4 px-8 sm:px-10 rounded-full shadow-md shadow-red-500/20 transition-all duration-150 mb-8">
@@ -1997,8 +1955,19 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                   ? (progress < 90 ? `Compressing image${files.length > 1 ? 's' : ''}...` : 'Finishing up...')
                   : toolSlug === 'jpg-to-png'
                   ? (progress < 90 ? `Converting image${files.length > 1 ? 's' : ''}...` : 'Finishing up...')
+                  : toolSlug === 'rotate-pdf'
+                  ? (progress < 90 ? 'Rotating pages...' : 'Finishing up...')
+                  : toolSlug === 'watermark-pdf'
+                  ? (progress < 90 ? 'Applying watermark...' : 'Finishing up...')
+                  : toolSlug === 'add-page-numbers'
+                  ? (progress < 90 ? 'Adding page numbers...' : 'Finishing up...')
                   : (progress < 50 ? 'Loading PDF...' : progress < 75 ? 'Analyzing structure...' : 'Compressing file...')}
               </p>
+              {batchProgress && (
+                <p className="text-xs text-slate-400 dark:text-zinc-500">
+                  File {Math.min(batchProgress.completed + 1, batchProgress.total)} of {batchProgress.total}
+                </p>
+              )}
             </div>
           ) : isCompleted && downloadUrl ? (
             /* Completed State */
@@ -2012,6 +1981,19 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Your file is ready!</h3>
                 <p className="text-xs text-slate-500 dark:text-zinc-400">Processed privately in your browser.</p>
               </div>
+              {batchResultSummary && (
+                <div className="text-sm text-slate-600 dark:text-zinc-300">
+                  <p>
+                    {batchResultSummary.count} file{batchResultSummary.count === 1 ? '' : 's'} processed
+                    {batchResultSummary.isZip ? ', bundled into one ZIP' : ''}.
+                  </p>
+                  {batchResultSummary.failedCount > 0 && (
+                    <p className="text-amber-600 dark:text-amber-400 text-xs mt-1">
+                      {batchResultSummary.failedCount} file{batchResultSummary.failedCount === 1 ? '' : 's'} could not be processed and {batchResultSummary.failedCount === 1 ? 'was' : 'were'} skipped.
+                    </p>
+                  )}
+                </div>
+              )}
               {toolSlug === 'compress-pdf' && compressedFile && PdfPreview && (
                 <div className="flex flex-col items-center gap-4">
                   <div className="w-48 p-2 border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900">
@@ -2083,10 +2065,10 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
                 <a
                   href={downloadUrl || '#'}
-                  download={downloadUrl ? `${toolSlug}-output.${getDownloadExtension(toolSlug)}` : undefined}
+                  download={downloadUrl ? (batchResultSummary?.isZip ? `${toolSlug}-batch-output.zip` : `${toolSlug}-output.${getDownloadExtension(toolSlug)}`) : undefined}
                   className="w-full sm:w-auto px-10 py-3.5 bg-[#E5252A] hover:bg-[#C51920] text-white font-bold text-sm rounded-full shadow-md transition-all text-center"
                 >
-                  Download {getDownloadExtension(toolSlug).toUpperCase()}
+                  {batchResultSummary?.isZip ? 'Download ZIP' : `Download ${getDownloadExtension(toolSlug).toUpperCase()}`}
                 </a>
                 <button
                   onClick={handleClearAll}
@@ -2167,6 +2149,105 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
               {toolSlug === 'crop-pdf' && files.length > 0 && (
                 <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 w-full">
                   <PdfCropEditor file={files[0]} onCropChange={handleCropChange} />
+                </div>
+              )}
+
+              {toolSlug === 'rotate-pdf' && files.length > 0 && !isBatchMode && (
+                <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 w-full space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                      Rotate pages {pdfToImagePreviews.length > 0 ? `(${pdfToImagePreviews.length})` : ''}
+                    </h4>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-zinc-400 mr-1">Rotate all:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRotateAllBy(-90)}
+                        title="Rotate all pages left"
+                        className="p-2 rounded-lg text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L4 10m0 0l5-5m-5 5h11a4 4 0 010 8h-1" /></svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRotateAllBy(90)}
+                        title="Rotate all pages right"
+                        className="p-2 rounded-lg text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 15l5-5m0 0l-5-5m5 5H9a4 4 0 000 8h1" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[380px] overflow-y-auto rounded-lg bg-slate-50 dark:bg-zinc-800/50 p-5 border border-slate-200 dark:border-zinc-700">
+                    {pdfToImagePreviews.map(({ pageNumber, blobUrl, isLoading }) => {
+                      const rotation = pageRotations[pageNumber] ?? 0;
+                      return (
+                        <div key={pageNumber} className="rounded-lg overflow-hidden bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 flex flex-col items-center p-2">
+                          <div className="w-full aspect-[3/4] flex items-center justify-center overflow-hidden">
+                            {isLoading ? (
+                              <Spinner className="w-6 h-6 text-slate-400" />
+                            ) : (
+                              <img
+                                src={blobUrl}
+                                alt={`Page ${pageNumber}`}
+                                className="max-w-full max-h-full object-contain transition-transform duration-200"
+                                style={{ transform: `rotate(${rotation}deg)` }}
+                              />
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between w-full mt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleRotatePageBy(pageNumber, -90)}
+                              title="Rotate left"
+                              className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L4 10m0 0l5-5m-5 5h11a4 4 0 010 8h-1" /></svg>
+                            </button>
+                            <span className="text-[10px] font-bold text-slate-500 dark:text-zinc-400">Page {pageNumber}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRotatePageBy(pageNumber, 90)}
+                              title="Rotate right"
+                              className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 15l5-5m0 0l-5-5m5 5H9a4 4 0 000 8h1" /></svg>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-400 dark:text-zinc-500">
+                    Use "Rotate all" to turn every page at once, or rotate pages one at a time.
+                  </p>
+                </div>
+              )}
+
+              {toolSlug === 'rotate-pdf' && files.length > 0 && isBatchMode && (
+                <div className="pt-4 border-t border-slate-100 dark:border-zinc-800 w-full space-y-2">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                    Rotate every file by
+                  </h4>
+                  <p className="text-xs text-slate-400 dark:text-zinc-500 mb-1">
+                    Batch mode applies one angle to every page of every file - individual per-page rotation isn't available here.
+                  </p>
+                  <div className="flex gap-2">
+                    {([90, 180, 270] as const).map((deg) => (
+                      <button
+                        key={deg}
+                        type="button"
+                        onClick={() => setBatchRotateAngle(deg)}
+                        className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                          batchRotateAngle === deg
+                            ? 'bg-[#E5252A] text-white shadow-md'
+                            : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700'
+                        }`}
+                      >
+                        {deg}\u00b0
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -2816,6 +2897,175 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
                     )}
                   </div>
                 )}
+
+                {toolSlug === 'watermark-pdf' && (
+                  <div className="w-full space-y-4 bg-slate-50 dark:bg-zinc-800/50 p-5 rounded-xl border border-slate-200 dark:border-zinc-700">
+                    <h4 className="font-semibold text-slate-900 dark:text-white text-sm">Watermark Options</h4>
+
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">Watermark text</label>
+                      <input
+                        type="text"
+                        value={watermarkText}
+                        onChange={(e) => setWatermarkText(e.target.value)}
+                        placeholder="e.g. CONFIDENTIAL"
+                        className="w-full px-4 py-2.5 text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">Layout</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setWatermarkLayout('center')}
+                          className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all ${
+                            watermarkLayout === 'center'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          Centered
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWatermarkLayout('tile')}
+                          className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all ${
+                            watermarkLayout === 'tile'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          Tiled
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">Font size</label>
+                        <input
+                          type="number" min={8} max={200} value={watermarkFontSize}
+                          onChange={(e) => setWatermarkFontSize(Number(e.target.value))}
+                          className="w-full px-3 py-2 text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">Rotation \u00b0</label>
+                        <input
+                          type="number" min={-180} max={180} value={watermarkRotationDeg}
+                          onChange={(e) => setWatermarkRotationDeg(Number(e.target.value))}
+                          className="w-full px-3 py-2 text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 items-end">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">Color</label>
+                        <input
+                          type="color" value={watermarkColor}
+                          onChange={(e) => setWatermarkColor(e.target.value)}
+                          className="w-full h-[38px] px-1 py-1 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
+                          Opacity ({Math.round(watermarkOpacity * 100)}%)
+                        </label>
+                        <input
+                          type="range" min={0.05} max={1} step={0.05} value={watermarkOpacity}
+                          onChange={(e) => setWatermarkOpacity(Number(e.target.value))}
+                          className="w-full accent-[#E5252A]"
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-400 dark:text-zinc-500">
+                      Applied to every page. Choose "Tiled" to repeat the watermark diagonally across the whole page.
+                    </p>
+                  </div>
+                )}
+
+                {toolSlug === 'add-page-numbers' && (
+                  <div className="w-full space-y-4 bg-slate-50 dark:bg-zinc-800/50 p-5 rounded-xl border border-slate-200 dark:border-zinc-700">
+                    <h4 className="font-semibold text-slate-900 dark:text-white text-sm">Page Number Options</h4>
+
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">Position</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          ['top-left', 'Top left'],
+                          ['top-center', 'Top center'],
+                          ['top-right', 'Top right'],
+                          ['bottom-left', 'Bottom left'],
+                          ['bottom-center', 'Bottom center'],
+                          ['bottom-right', 'Bottom right'],
+                        ] as const).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setPageNumberPosition(value)}
+                            className={`py-2 px-2 rounded-lg font-medium text-xs transition-all ${
+                              pageNumberPosition === value
+                                ? 'bg-[#E5252A] text-white shadow-md'
+                                : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">Start at</label>
+                        <input
+                          type="number" min={0} value={pageNumberStart}
+                          onChange={(e) => setPageNumberStart(Number(e.target.value))}
+                          className="w-full px-3 py-2 text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">Font size</label>
+                        <input
+                          type="number" min={6} max={72} value={pageNumberFontSize}
+                          onChange={(e) => setPageNumberFontSize(Number(e.target.value))}
+                          className="w-full px-3 py-2 text-sm bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300">Format</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPageNumberFormat('number')}
+                          className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all ${
+                            pageNumberFormat === 'number'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          1, 2, 3\u2026
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPageNumberFormat('number-of-total')}
+                          className={`flex-1 py-2.5 px-4 rounded-lg font-medium text-sm transition-all ${
+                            pageNumberFormat === 'number-of-total'
+                              ? 'bg-[#E5252A] text-white shadow-md'
+                              : 'bg-white dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-zinc-600 hover:border-slate-300 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          1 / 10
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons Container */}
@@ -2827,7 +3077,11 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
 
                 <button
                   onClick={handleProcess}
-                  disabled={isProcessing || (toolSlug === 'compress-image' && !(targetSizeKb && parseFloat(targetSizeKb) > 0))}
+                  disabled={
+                    isProcessing ||
+                    (toolSlug === 'compress-image' && !(targetSizeKb && parseFloat(targetSizeKb) > 0)) ||
+                    (toolSlug === 'watermark-pdf' && !watermarkText.trim())
+                  }
                   className="w-full sm:w-auto px-10 py-3.5 bg-[#E5252A] hover:bg-[#C51920] disabled:bg-slate-400 text-white font-bold text-sm rounded-full shadow-md transition-all flex items-center justify-center space-x-2"
                 >
                   {isProcessing ? (
@@ -2840,6 +3094,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
 
         </div>
       </div>
+      <UpgradeModal isOpen={!!upgradeMessage} message={upgradeMessage ?? ''} onClose={() => setUpgradeMessage(null)} />
     </div>
   );
 };
