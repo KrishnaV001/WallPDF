@@ -1,0 +1,11 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { PricingCards } from '../components/PricingCards';
+---
+
+<BaseLayout
+  title="Pricing — WallPDF"
+  description="Every WallPDF tool is free. Upgrade to Premium for unlimited batch processing and workflow automation."
+>
+  <PricingCards client:load />
+</BaseLayout>

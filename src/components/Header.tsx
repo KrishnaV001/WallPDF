@@ -78,14 +78,24 @@ export const Header: React.FC = () => {
       <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 dark:border-zinc-800 bg-white/80 dark:bg-black/80 backdrop-blur-md transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           
-          <a href="/" className="flex items-center space-x-2.5 group shrink-">
-            <img src="/wallpdf-logo(1).svg"
-              alt="WallPDF"
-              className=" w-10 h-10 sm:w-12 sm:h-12 group-hover:scale-105 transition-transform"/>
-              <span className="font-bold text-2xl text-slate-900 dark:text-white">
-               WallPDF
-              </span>
-          </a>
+          <div className="flex items-center gap-6">
+            <a href="/" className="flex items-center space-x-2.5 group shrink-">
+              <img src="/wallpdf-logo(1).svg"
+                alt="WallPDF"
+                className=" w-10 h-10 sm:w-12 sm:h-12 group-hover:scale-105 transition-transform"/>
+                <span className="font-bold text-2xl text-slate-900 dark:text-white">
+                 WallPDF
+                </span>
+            </a>
+            <nav className="hidden md:flex items-center gap-5">
+              <a href="/workflows" className="text-sm font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors">
+                Workflows
+              </a>
+              <a href="/pricing" className="text-sm font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors">
+                Pricing
+              </a>
+            </nav>
+          </div>
 
           <div className="flex items-center gap-1 sm:gap-4">
             <div className='scale-[0.95] sm:scale-100 '><ThemeToggle /></div>
@@ -182,6 +192,14 @@ export const Header: React.FC = () => {
             </div>
           </div>
         </div>
+        <nav className="md:hidden flex items-center gap-5 px-4 sm:px-6 pb-2.5 -mt-1">
+          <a href="/workflows" className="text-xs font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors">
+            Workflows
+          </a>
+          <a href="/pricing" className="text-xs font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors">
+            Pricing
+          </a>
+        </nav>
       </header>
 
       {!user && (
