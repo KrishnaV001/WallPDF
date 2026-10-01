@@ -349,7 +349,7 @@ export const WorkflowBuilder: React.FC = () => {
         {resultBlob && (
           <a
             href={URL.createObjectURL(resultBlob)}
-            download="workflow-output.pdf"
+            download={file ? `${file.name.replace(/\.[^./\\]+$/, '')}-workflow.pdf` : 'workflow-output.pdf'}
             className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-full shadow-md transition-all text-center"
           >
             Download result

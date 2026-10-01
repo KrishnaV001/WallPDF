@@ -1044,6 +1044,79 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
     }
     return 'application/pdf';
   };
+
+  // Builds the filename offered in the browser's save dialog, based on what
+  // the person actually uploaded instead of a generic "<tool-slug>-output"
+  // name. Keeps the uploaded base name and either swaps the extension
+  // (format conversions) or appends a tool-specific suffix (rotated,
+  // watermarked, compressed, etc.) - the same convention compress-pdf and
+  // compress-image already used internally for `compressedFile`, now
+  // applied consistently everywhere the download button appears.
+  const getOutputFileName = (slug: string): string => {
+    const extension = getDownloadExtension(slug);
+    const stripExt = (name: string) => name.replace(/\.[^./\\]+$/, '');
+
+    // Batch runs are zipped; the files inside are already named per-file by
+    // runBatch (src/lib/batch.ts) - this only names the zip wrapper itself.
+    if (batchResultSummary?.isZip) {
+      const base = files.length === 1 ? stripExt(files[0].name) : 'batch';
+      return `${base}-${slug}.zip`;
+    }
+
+    // compress-pdf / compress-image / jpg-to-png's single-result path already
+    // computes and stores the exact right name on `compressedFile`, tied to
+    // whichever specific input survived processing (important if an earlier
+    // file in a multi-file selection failed and got skipped) - prefer that
+    // over recomputing it from files[0] here.
+    if (compressedFile && (slug === 'compress-pdf' || slug === 'compress-image' || slug === 'jpg-to-png')) {
+      return compressedFile.name;
+    }
+
+    if (files.length === 0) {
+      return `${slug}-output.${extension}`;
+    }
+
+    const baseName = stripExt(files[0].name);
+
+    if (slug === 'pdf-to-images') {
+      return extension === 'zip' ? `${baseName}-images.zip` : `${baseName}.${extension}`;
+    }
+
+    if (slug === 'compress-image' || slug === 'jpg-to-png') {
+      // Multi-result zip case (compressedFile isn't set for >1 result).
+      return `${baseName}-${slug === 'jpg-to-png' ? 'png' : 'compressed'}.zip`;
+    }
+
+    const isConversionTool =
+      slug.startsWith('word-to-') ||
+      slug.startsWith('powerpoint-to-') ||
+      slug.startsWith('excel-to-') ||
+      slug === 'pdf-to-word' ||
+      slug === 'pdf-to-powerpoint' ||
+      slug === 'pdf-to-excel' ||
+      slug === 'image-to-pdf';
+
+    if (isConversionTool) {
+      // Format conversions keep the original name and just swap the
+      // extension - "report.pdf" -> "report.docx", not "report-pdf-to-word.docx".
+      return `${baseName}.${extension}`;
+    }
+
+    const suffixBySlug: Record<string, string> = {
+      'rotate-pdf': 'rotated',
+      'watermark-pdf': 'watermarked',
+      'add-page-numbers': 'numbered',
+      'compress-pdf': 'compressed',
+      'crop-pdf': 'cropped',
+      'edit-pdf': 'edited',
+      'split-pdf': 'extracted',
+      'merge-pdf': 'merged', // uses the first file's name - there's no single "source" name for N merged files
+    };
+
+    const suffix = suffixBySlug[slug];
+    return suffix ? `${baseName}-${suffix}.${extension}` : `${baseName}.${extension}`;
+  };
+
   const handleProcess = async () => {
     if (files.length === 0) return;
 
@@ -2065,7 +2138,7 @@ export const ToolWorkspace: React.FC<ToolWorkspaceProps> = ({
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
                 <a
                   href={downloadUrl || '#'}
-                  download={downloadUrl ? (batchResultSummary?.isZip ? `${toolSlug}-batch-output.zip` : `${toolSlug}-output.${getDownloadExtension(toolSlug)}`) : undefined}
+                  download={downloadUrl ? getOutputFileName(toolSlug) : undefined}
                   className="w-full sm:w-auto px-10 py-3.5 bg-[#E5252A] hover:bg-[#C51920] text-white font-bold text-sm rounded-full shadow-md transition-all text-center"
                 >
                   {batchResultSummary?.isZip ? 'Download ZIP' : `Download ${getDownloadExtension(toolSlug).toUpperCase()}`}
